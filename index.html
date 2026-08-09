@@ -90,7 +90,7 @@ function resize(){ DPR=Math.min(window.devicePixelRatio||1,2.5); W=innerWidth; H
   nest.x=W*0.5; nest.y=H-58; }
 addEventListener('resize',resize);
 
-const P={ float:1.4, grav:760, flap:230, side:150, interval:160, maxUp:330, hit:0.72 };
+const P={ float:1.4, grav:760, flap:230, side:150, interval:160, maxUp:330, hit:0.85 };
 
 const L={ x:0,y:0, vx:0,vy:0, tilt:0, bob:0, armL:-0.5, armR:0.5, flapPulseL:0, flapPulseR:0, squash:0,
           balloons:2, iframe:0, pupX:0, pupY:0, wing:0 };
@@ -110,7 +110,10 @@ const SOFFX=SDW/2-_emx*SPRSCALE, SOFFY=(-R*0.12)+SDH/2-_emy*SPRSCALE;
 const EYESL=[[-SDW/2+SOFFX+EYESI[0][0]*SPRSCALE,-SDH/2+SOFFY+EYESI[0][1]*SPRSCALE],
             [-SDW/2+SOFFX+EYESI[1][0]*SPRSCALE,-SDH/2+SOFFY+EYESI[1][1]*SPRSCALE]];
 const EYER=EYERI*SPRSCALE;
-const HITCY=SOFFY;    // sprite's visual center sits SOFFY below the eye anchor (L.x,L.y) — hit-circle must recenter here to match what's drawn
+// SOFFY centers the hit-circle on the sprite's bounding-box middle, but LOVOT's silhouette is
+// bottom-heavy (small head, round belly) so that geometric center still reads as "too high" against
+// the art. Bias it further down toward the belly to match what's actually drawn.
+const HITCY=SOFFY+R*0.4;
 
 // ---------- sfx ----------
 // No recorded sound files yet: each cue is synthesized with Web Audio. Drop a matching file into
@@ -224,12 +227,12 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     if(e.y<80)e.y=80; if(e.y>H-100)e.y=H-100; }
 
   // collisions lovot vs enemies (hit-circle centered on the sprite's visual body, not the eye anchor)
-  const hcy=L.y+HITCY;
+  const hcy=L.y+HITCY, hitR=R*P.hit, feetY=hcy+hitR;
   if(L.iframe<=0){
     for(const e of enemies){ const dx=L.x-e.x, dy=hcy-e.y; const d=Math.hypot(dx,dy);
-      if(d < R*P.hit+e.r){
-        if(hcy < e.y - e.r*0.30){ befriend(e); break; }        // from above → befriend
-        else { if(tail.length>0) scatterTail(); else loseBalloon(); break; } // side/below → hit
+      if(d < hitR+e.r){
+        if(feetY < e.y+e.r*0.15){ befriend(e); break; }        // feet still above/around the enemy's top → stomp
+        else { if(tail.length>0) scatterTail(); else loseBalloon(); break; } // otherwise a side/below hit
       } }
   }
 
@@ -240,7 +243,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     o.x+=o.vx*dt; o.y+=o.vy*dt;
     const lg=H-52; if(o.y>lg){o.y=lg; o.vy*=-0.35; o.vx*=0.6;}
     if(o.x<20)o.x=20; if(o.x>W-20)o.x=W-20;
-    if(o.arm<=0 && Math.hypot(L.x-o.x,hcy-o.y) < R*P.hit+16){ tail.push({color:o.color}); loose.splice(i,1); addPuff(o.x,o.y,o.color); SFX.recollect(); continue; }
+    if(o.arm<=0 && Math.hypot(L.x-o.x,hcy-o.y) < hitR+16){ tail.push({color:o.color}); loose.splice(i,1); addPuff(o.x,o.y,o.color); SFX.recollect(); continue; }
     if(o.life<=0){ loose.splice(i,1); }
   }
 
