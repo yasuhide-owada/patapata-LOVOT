@@ -57,10 +57,44 @@
   .row input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:20px; height:20px; border-radius:50%; background:var(--gold); box-shadow:0 2px 6px rgba(0,0,0,.35); }
   .row input[type=range]::-moz-range-thumb{ width:20px; height:20px; border:none; border-radius:50%; background:var(--gold); }
   .note { font-size:11.5px; opacity:.55; line-height:1.5; margin-top:2px; }
+
+  #title { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center;
+    padding:24px; background:rgba(20,17,22,.38); backdrop-filter:blur(2px); }
+  #title.hidden { display:none; }
+  #title .card { width:min(340px, 100%); background:var(--panel-bg); border:1px solid rgba(255,210,180,.16);
+    border-radius:22px; padding:26px 24px 24px; color:var(--cream); box-shadow:0 20px 60px rgba(0,0,0,.45);
+    text-align:center; }
+  #title h1 { font-size:22px; font-weight:800; color:var(--gold); letter-spacing:.02em; margin-bottom:4px; }
+  #title .sub { font-size:12px; opacity:.65; margin-bottom:18px; }
+  #title .howto { text-align:left; font-size:13.5px; line-height:1.85; background:rgba(0,0,0,.18);
+    border-radius:14px; padding:14px 16px; margin-bottom:16px; }
+  #title .howto .head { font-weight:800; color:var(--gold); font-size:12px; letter-spacing:.04em;
+    text-transform:uppercase; margin-bottom:6px; }
+  #title .howto .tease { margin-top:10px; padding-top:10px; border-top:1px dashed rgba(255,255,255,.18);
+    font-size:13px; color:#ffd9a0; }
+  #start { width:100%; height:52px; border:none; border-radius:999px; font-size:16px; font-weight:800;
+    letter-spacing:.02em; color:#fff; cursor:pointer;
+    background:linear-gradient(135deg, var(--coral), var(--coral-dk)); box-shadow:0 8px 22px rgba(225,79,112,.5); }
 </style>
 </head>
 <body>
 <div id="stage"><canvas id="c"></canvas></div>
+
+<div id="title">
+  <div class="card">
+    <h1>LOVOT バルーン</h1>
+    <div class="sub">ちびラボットを集めて巣に届けよう</div>
+    <div class="howto">
+      <div class="head">あそびかた</div>
+      ・左右をタップしてパタパタ羽ばたこう<br>
+      ・ちびラボットを上から踏んで仲間にしよう<br>
+      ・巣まで連れて帰って納品！<br>
+      ・横からぶつかると仲間が散らばっちゃうので注意
+      <div class="tease">💡 一度にたくさんのちびラボットを集めて巣に返すとボーナス…!?(近日実装)</div>
+    </div>
+    <button id="start">あそぶ</button>
+  </div>
+</div>
 
 <div id="hud">
   <div class="score"><span id="score">0</span> <small>納品</small></div>
@@ -188,7 +222,8 @@ function recompute(){ const s=new Set(pointers.values()); holdL=s.has('L')||keyL
 function fadeHint(){ if(!hinted){ hinted=true; document.getElementById('hint').style.opacity=0; } }
 function flap(side){ const f=P.flap*(L.balloons>=2?1:0.82); L.wing=0.13; SPR.upTimer=0.12; SFX.flap();
   if(side==='L'){ L.vy-=f; L.vx-=P.side; L.flapPulseL=1; } else { L.vy-=f; L.vx+=P.side; L.flapPulseR=1; } }
-function press(side){ BGM.start(); flap(side); if(side==='L')tL=0; else tR=0; }
+let started=false;
+function press(side){ if(!started)return; BGM.start(); flap(side); if(side==='L')tL=0; else tR=0; }
 const stage=document.getElementById('stage');
 addEventListener('contextmenu',e=>e.preventDefault());
 stage.addEventListener('pointerdown',e=>{ const wl=[...pointers.values()].includes('L'), wr=[...pointers.values()].includes('R');
@@ -432,6 +467,12 @@ bind('float','float',x=>x.toFixed(2)); bind('grav','grav',x=>Math.round(x)); bin
 bind('climb','maxUp',x=>Math.round(x)); bind('side','side',x=>Math.round(x));
 bind('hit','hit',x=>Math.round(R*x)+'px');
 let DEBUG=false; document.getElementById('dbg').addEventListener('change',e=>{ DEBUG=e.target.checked; });
+
+// ---------- title screen ----------
+document.getElementById('start').addEventListener('click',()=>{
+  document.getElementById('title').classList.add('hidden');
+  resetAll(); started=true; BGM.start(); fadeHint();
+});
 
 resize(); resetAll(); requestAnimationFrame(tick);
 </script>
