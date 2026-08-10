@@ -35,11 +35,11 @@
     background:var(--chip-bg); padding:9px 15px; border-radius:16px; backdrop-filter:blur(3px);
     transition:opacity .6s ease; pointer-events:none; max-width:92vw; }
 
-  #gear,#reset { position:fixed; top:calc(env(safe-area-inset-top) + 12px); z-index:20;
-    border:none; cursor:pointer; color:var(--cream);
-    backdrop-filter:blur(4px); }
-  #gear { right:12px; width:42px; height:42px; border-radius:50%; font-size:20px; background:var(--chip-bg); }
-  #reset { right:62px; height:42px; padding:0 14px; border-radius:999px; font-size:13px; font-weight:700;
+  #topbar { position:fixed; top:calc(env(safe-area-inset-top) + 12px); right:12px; z-index:20;
+    display:flex; align-items:center; gap:10px; }
+  #gear,#reset,#bgm { border:none; cursor:pointer; color:var(--cream); backdrop-filter:blur(4px); flex:none; }
+  #gear,#bgm { width:42px; height:42px; border-radius:50%; font-size:20px; background:var(--chip-bg); }
+  #reset { height:42px; padding:0 14px; border-radius:999px; font-size:13px; font-weight:700;
     background:linear-gradient(135deg, var(--coral), var(--coral-dk)); color:#fff;
     box-shadow:0 3px 10px rgba(225,79,112,.45); }
   #panel { position:fixed; top:calc(env(safe-area-inset-top) + 62px); right:12px; z-index:20;
@@ -68,8 +68,11 @@
 </div>
 <div id="hint">左タップ＝左の手 / 右タップ＝右の手 / 両方で上昇<br>上から踏んで仲間に → 巣に連れ帰って納品 / 横からぶつかると散らばる</div>
 
-<button id="reset">リセット</button>
-<button id="gear">⚙</button>
+<div id="topbar">
+  <button id="bgm">🔊</button>
+  <button id="reset">リセット</button>
+  <button id="gear">⚙</button>
+</div>
 <div id="panel">
   <h3>手触り調整</h3>
   <div class="row"><label>ふわふわ感<span id="v_float"></span></label><input type="range" id="s_float" min="0.3" max="3.2" step="0.05"></div>
@@ -149,6 +152,23 @@ const SFX=(()=>{
   return api;
 })();
 
+// ---------- bgm ----------
+const BGM=(()=>{
+  const el=new Audio('assets/sounds/bgm/ふわふわの空.mp3');
+  el.loop=true; el.volume=0.35;
+  let muted=localStorage.getItem('lovot_bgm_muted')==='1', started=false;
+  const btn=document.getElementById('bgm');
+  function refreshBtn(){ btn.textContent=muted?'🔇':'🔊'; }
+  function start(){ if(started) return; started=true; if(!muted) el.play().catch(()=>{}); }
+  btn.addEventListener('click',()=>{
+    muted=!muted; localStorage.setItem('lovot_bgm_muted',muted?'1':'0');
+    if(muted) el.pause(); else if(started) el.play().catch(()=>{});
+    refreshBtn();
+  });
+  refreshBtn();
+  return { start };
+})();
+
 function resetAll(){ L.x=W*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.iframe=0;
   tail.length=0; loose.length=0; enemies.length=0; hist.length=0; score=0; banked=0;
   for(let i=0;i<5;i++) spawnEnemy(); }
@@ -168,7 +188,7 @@ function recompute(){ const s=new Set(pointers.values()); holdL=s.has('L')||keyL
 function fadeHint(){ if(!hinted){ hinted=true; document.getElementById('hint').style.opacity=0; } }
 function flap(side){ const f=P.flap*(L.balloons>=2?1:0.82); L.wing=0.13; SPR.upTimer=0.12; SFX.flap();
   if(side==='L'){ L.vy-=f; L.vx-=P.side; L.flapPulseL=1; } else { L.vy-=f; L.vx+=P.side; L.flapPulseR=1; } }
-function press(side){ flap(side); if(side==='L')tL=0; else tR=0; }
+function press(side){ BGM.start(); flap(side); if(side==='L')tL=0; else tR=0; }
 const stage=document.getElementById('stage');
 addEventListener('contextmenu',e=>e.preventDefault());
 stage.addEventListener('pointerdown',e=>{ const wl=[...pointers.values()].includes('L'), wr=[...pointers.values()].includes('R');
