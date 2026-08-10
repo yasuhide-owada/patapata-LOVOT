@@ -97,7 +97,7 @@
 </div>
 
 <div id="hud">
-  <div class="score"><span id="score">0</span> <small>納品</small></div>
+  <div class="score"><span id="score">0</span> <small>スコア</small></div>
   <div class="carry" id="carry">抱えてる: 0</div>
 </div>
 <div id="hint">左タップ＝左の手 / 右タップ＝右の手 / 両方で上昇<br>上から踏んで仲間に → 巣に連れ帰って納品 / 横からぶつかると散らばる</div>
@@ -134,7 +134,8 @@ const L={ x:0,y:0, vx:0,vy:0, tilt:0, bob:0, armL:-0.5, armR:0.5, flapPulseL:0, 
 const SPR={upTimer:0};
 const nest={ x:0,y:0, r:40 };
 let score=0, banked=0;
-const enemies=[], tail=[], loose=[], puffs=[], hist=[];
+const enemies=[], tail=[], loose=[], puffs=[], hist=[], delivering=[], popups=[];
+function easeOutBack(x){ const c1=1.70158, c3=c1+1; return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2); }
 const SP=7;               // history frames between followers
 const R=30;               // lovot body radius
 const palette=['#ff9db0','#ffd27a','#9ad0ff','#c3b0ff','#a6e3b0','#ffb0d8'];
@@ -159,28 +160,41 @@ const SFX=(()=>{
   let ac;
   function ensure(){ if(!ac) ac=new (window.AudioContext||window.webkitAudioContext)();
     if(ac.state==='suspended') ac.resume(); return ac; }
-  function tone(freq,dur,type,gain,slideTo,delay){
-    const a=ensure(); const t0=a.currentTime+(delay||0);
+  // voice-tracked sounds (recollect during the delivery fly-in fires every 0.1s) cut the
+  // previous instance short instead of stacking, so rapid retriggers stay a crisp blip.
+  const active={};
+  function cutVoice(voice,a){ const prev=active[voice]; if(!prev) return;
+    try{ prev.gain.cancelScheduledValues(a.currentTime); prev.gain.setValueAtTime(prev.gain.value,a.currentTime);
+      prev.gain.linearRampToValueAtTime(0,a.currentTime+0.008); prev.osc.stop(a.currentTime+0.01); }catch(e){}
+    delete active[voice]; }
+  function tone(voice,freq,dur,type,gain,slideTo,delay){
+    const a=ensure(); if(voice) cutVoice(voice,a);
+    const t0=a.currentTime+(delay||0);
     const osc=a.createOscillator(), g=a.createGain();
     osc.type=type; osc.frequency.setValueAtTime(freq,t0);
     if(slideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(1,slideTo),t0+dur);
     g.gain.setValueAtTime(0,t0); g.gain.linearRampToValueAtTime(gain,t0+0.01); g.gain.exponentialRampToValueAtTime(0.001,t0+dur);
     osc.connect(g); g.connect(a.destination); osc.start(t0); osc.stop(t0+dur+0.02);
+    if(voice){ active[voice]={osc,gain:g.gain}; osc.onended=()=>{ if(active[voice]&&active[voice].osc===osc) delete active[voice]; }; }
   }
   const synth={
-    flap:     ()=>tone(520,0.09,'sine',0.10,340),
-    befriend: ()=>tone(660,0.16,'triangle',0.16,990),
-    recollect:()=>tone(520,0.12,'triangle',0.13,760),
-    hit:      ()=>tone(220,0.22,'sawtooth',0.15,90),
-    deliver:  ()=>{ tone(520,0.12,'sine',0.15); tone(660,0.14,'sine',0.15,null,0.07); tone(880,0.18,'sine',0.15,null,0.14); },
+    flap:     ()=>tone('flap',520,0.09,'sine',0.10,340),
+    befriend: ()=>tone('befriend',660,0.16,'triangle',0.16,990),
+    recollect:()=>tone('recollect',520,0.12,'triangle',0.13,760),
+    hit:      ()=>tone('hit',220,0.22,'sawtooth',0.15,90),
+    pop:      ()=>tone('pop',180,0.28,'sawtooth',0.18,40),
+    deliver:  ()=>{ tone(null,520,0.12,'sine',0.15); tone(null,660,0.14,'sine',0.15,null,0.07); tone(null,880,0.18,'sine',0.15,null,0.14); },
   };
   const files={ flap:'assets/sounds/flap.mp3', befriend:'assets/sounds/befriend.mp3',
-    recollect:'assets/sounds/recollect.mp3', hit:'assets/sounds/hit.mp3', deliver:'assets/sounds/deliver.mp3' };
+    recollect:'assets/sounds/recollect.mp3', hit:'assets/sounds/hit.wav', deliver:'assets/sounds/deliver.wav',
+    pop:'assets/sounds/風船割れる.mp3' };
   const clip={};
-  for(const name in files){ const el=new Audio(); const c={el,found:true};
+  for(const name in files){ const el=new Audio(); el.volume=0.6; const c={el,found:true};
     el.addEventListener('error',()=>c.found=false,{once:true}); el.src=files[name]; clip[name]=c; }
+  // reusing the single element (instead of cloning per play) means a retrigger seeks it back
+  // to 0, cutting off whatever was still playing — same cancel-and-restart behavior as tone().
   function play(name){ const c=clip[name];
-    if(c && c.found && c.el.readyState>0){ const n=c.el.cloneNode(); n.volume=0.6; n.play().catch(()=>{}); }
+    if(c && c.found && c.el.readyState>0){ c.el.currentTime=0; c.el.play().catch(()=>{}); }
     else synth[name](); }
   const api={}; for(const name in synth) api[name]=()=>play(name);
   return api;
@@ -205,6 +219,7 @@ const BGM=(()=>{
 
 function resetAll(){ L.x=W*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.iframe=0;
   tail.length=0; loose.length=0; enemies.length=0; hist.length=0; score=0; banked=0;
+  delivering.length=0; popups.length=0;
   for(let i=0;i<5;i++) spawnEnemy(); }
 function respawnLovot(){ L.x=nest.x; L.y=nest.y-120; L.vx=0; L.vy=0; L.balloons=2; L.iframe=1.6; hist.length=0; }
 
@@ -251,7 +266,7 @@ function scatterTail(){ // sonic-style: whole tail drops & scatters, recoverable
     loose.push({ x:p.x, y:p.y, vx:(Math.random()-0.5)*260, vy:-120-Math.random()*140,
       color:tail[i].color, arm:0.45, life:6.5 }); }
   tail.length=0; L.iframe=1.0; L.vy=-140; SFX.hit(); }
-function loseBalloon(){ L.balloons--; L.iframe=1.2; L.vy=-160; L.vx*=-0.4; SFX.hit();
+function loseBalloon(){ L.balloons--; L.iframe=1.2; L.vy=-160; L.vx*=-0.4; SFX.pop();
   if(L.balloons<=0){ addPuff(L.x,L.y,'#fff'); respawnLovot(); } }
 function tailPos(i){ const idx=Math.min((i+1)*SP, hist.length-1); return hist[idx]||{x:L.x,y:L.y}; }
 
@@ -302,10 +317,37 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     if(o.life<=0){ loose.splice(i,1); }
   }
 
-  // bank at nest
+  // bank at nest: the flock peels off one by one and flies into the nest, each landing
+  // adding its place in line (1,2,3…) so the running total lands exactly on the triangular
+  // bonus (n*(n+1)/2) by the time the last one arrives
   if(tail.length>0 && Math.hypot(L.x-nest.x, L.y-nest.y) < nest.r+R*0.6){
-    score+=tail.length; banked+=tail.length; addPuff(nest.x,nest.y-10,'#ffd27a');
-    addPuff(nest.x-14,nest.y-4,'#a6e3b0'); addPuff(nest.x+14,nest.y-4,'#ff9db0'); tail.length=0; SFX.deliver(); }
+    const n=tail.length, batch={remaining:n, total:n*(n+1)/2};
+    for(let i=0;i<n;i++){ const p=tailPos(i);
+      delivering.push({x:p.x,y:p.y,sx:p.x,sy:p.y,color:tail[i].color,pts:i+1,delay:i*0.1,t:0,prog:0,batch}); }
+    tail.length=0; SFX.deliver();
+  }
+
+  // delivering minis: fly one by one from wherever they were in line into the nest
+  for(let i=delivering.length-1;i>=0;i--){ const d=delivering[i];
+    if(d.delay>0){ d.delay-=dt; continue; }
+    d.t+=dt; const prog=Math.min(1,d.t/0.45), ease=1-(1-prog)*(1-prog); d.prog=prog;
+    d.x=d.sx+(nest.x-d.sx)*ease; d.y=d.sy+(nest.y-10-d.sy)*ease-Math.sin(prog*Math.PI)*36;
+    if(prog>=1){
+      score+=d.pts; banked++; addPuff(nest.x,nest.y-10,d.color); SFX.recollect();
+      popups.push({x:nest.x+(Math.random()-0.5)*24,y:nest.y-34,text:'+'+d.pts,color:'#fff3da',size:15,life:0.55,life0:0.55,vy:-46});
+      d.batch.remaining--;
+      if(d.batch.remaining<=0){
+        popups.push({x:nest.x,y:nest.y-46,text:'ボーナス +'+d.batch.total+'!',color:'#ffd27a',size:30,life:1.3,life0:1.3,vy:-42,bounce:true});
+        for(let k=0;k<12;k++) addPuff(nest.x+(Math.random()-0.5)*46, nest.y-10+(Math.random()-0.5)*22, palette[(Math.random()*palette.length)|0]);
+        SFX.deliver();
+      }
+      delivering.splice(i,1);
+    }
+  }
+
+  // floating score popups
+  for(let i=popups.length-1;i>=0;i--){ const p=popups[i]; p.life-=dt; p.y+=p.vy*dt; p.vy*=Math.max(0,1-dt*1.5);
+    if(p.life<=0) popups.splice(i,1); }
 
   // puffs
   for(let i=puffs.length-1;i>=0;i--){ const p=puffs[i]; p.r+=dt*70; p.a-=dt*2.2; if(p.a<=0)puffs.splice(i,1); }
@@ -321,7 +363,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   SPR.upTimer=Math.max(0,SPR.upTimer-dt);
   for(const cl of clouds){ cl.x-=cl.sp*dt*3; if(cl.x<-120){cl.x=W+80;cl.y=Math.random()*innerHeight*0.6;} }
 
-  document.getElementById('score').textContent=banked;
+  document.getElementById('score').textContent=score;
   document.getElementById('carry').textContent='抱えてる: '+tail.length;
 
   draw();
@@ -347,9 +389,17 @@ function draw(){
   for(const e of enemies) miniLovot(e.x,e.y,0.82,e.color,'idle');
   // tail followers (far first)
   for(let i=tail.length-1;i>=0;i--){ const p=tailPos(i); miniLovot(p.x,p.y,0.7,tail[i].color,'happy'); }
+  for(const d of delivering) miniLovot(d.x,d.y,0.7-d.prog*0.3,d.color,'happy');
   drawLovot();
   for(const p of puffs){ ctx.fillStyle=`rgba(255,255,255,${Math.max(0,p.a)*0.7})`; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill();
     ctx.strokeStyle=hexA(p.c,Math.max(0,p.a)); ctx.lineWidth=2; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.stroke(); }
+  for(const p of popups){ const inProg=Math.min(1,(p.life0-p.life)/0.12);
+    const scale=p.bounce ? 0.4+0.9*easeOutBack(inProg) : 0.6+0.5*inProg;
+    ctx.save(); ctx.globalAlpha=Math.min(1,p.life/p.life0*3); ctx.translate(p.x,p.y); ctx.scale(scale,scale);
+    ctx.font=`900 ${p.size}px ui-rounded, "Hiragino Maru Gothic ProN", sans-serif`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.lineWidth=4; ctx.strokeStyle='rgba(40,20,10,.55)'; ctx.strokeText(p.text,0,0);
+    ctx.fillStyle=p.color; ctx.fillText(p.text,0,0); ctx.restore(); }
   if(DEBUG){ ctx.lineWidth=2;
     ctx.strokeStyle='rgba(0,200,255,.95)'; ctx.beginPath(); ctx.arc(L.x,L.y+HITCY,R*P.hit,0,7); ctx.stroke();
     ctx.strokeStyle='rgba(255,60,80,.9)'; for(const e of enemies){ ctx.beginPath(); ctx.arc(e.x,e.y,e.r,0,7); ctx.stroke(); }
