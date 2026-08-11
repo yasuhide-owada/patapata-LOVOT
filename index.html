@@ -88,6 +88,8 @@
   #result .best { font-size:13px; font-weight:700; color:#ffd9a0; margin-bottom:16px; min-height:18px; }
   #result button { width:100%; height:48px; border:none; border-radius:999px; font-size:15px; font-weight:800;
     letter-spacing:.02em; cursor:pointer; margin-bottom:10px; }
+  #result #r_share { color:#2b2730; background:linear-gradient(135deg, #ffe27a, var(--gold));
+    box-shadow:0 8px 22px rgba(224,165,63,.4); }
   #result #r_retry { color:#fff; background:linear-gradient(135deg, var(--coral), var(--coral-dk));
     box-shadow:0 8px 22px rgba(225,79,112,.5); }
   #result #r_toTitle { color:var(--cream); background:rgba(255,255,255,.12); margin-bottom:0; }
@@ -113,7 +115,7 @@
         <span class="modeName">練習</span><span class="modeDesc">時間無制限で自由にあそぶ</span>
       </button>
       <button class="modeBtn alt" data-mode="stage">
-        <span class="modeName">ステージクリア</span><span class="modeDesc">ちびラボットを20体納品でクリア</span>
+        <span class="modeName">ステージクリア</span><span class="modeDesc">全3ステージ、最後はボスに挑戦！</span>
       </button>
       <button class="modeBtn alt2" data-mode="time">
         <span class="modeName">1分間チャレンジ</span><span class="modeDesc">60秒でどれだけスコアを稼げるか</span>
@@ -131,6 +133,7 @@
       <div class="stat"><span id="r_time">0:00</span><small>タイム</small></div>
     </div>
     <div class="best" id="r_best"></div>
+    <button id="r_share">📤 スコアをシェア</button>
     <button id="r_retry">もう一度</button>
     <button id="r_toTitle">タイトルへ戻る</button>
   </div>
@@ -165,7 +168,7 @@ const cv=document.getElementById('c'), ctx=cv.getContext('2d');
 let W=0,H=0,DPR=1;
 function resize(){ DPR=Math.min(window.devicePixelRatio||1,2.5); W=innerWidth; H=innerHeight;
   cv.width=Math.floor(W*DPR); cv.height=Math.floor(H*DPR); ctx.setTransform(DPR,0,0,DPR,0,0);
-  nest.x=W*0.5; nest.y=H-58; }
+  updateWorldHeight(); }
 addEventListener('resize',resize);
 
 const P={ float:1.4, grav:760, flap:230, side:150, interval:160, maxUp:330, hit:0.85 };
@@ -175,9 +178,30 @@ const L={ x:0,y:0, vx:0,vy:0, tilt:0, bob:0, armL:-0.5, armR:0.5, flapPulseL:0, 
 const SPR={upTimer:0};
 const nest={ x:0,y:0, r:40 };
 let score=0, banked=0;
-const STAGE_TARGET=20, TIME_LIMIT=60;
+const TIME_LIMIT=60;
+// stage-clear mode: 3 stages — the first two are delivery quotas that get spikier/faster,
+// the third replaces the quota with a multi-hit boss (see spawnBoss/defeatBoss below).
+const STAGE_TARGETS=[8,14], STAGE_SPIKE=[0,0.25,0.4], STAGE_SPEED=[0.85,1,1.2];
+const BOSS_HITS=5, BOSS_REWARD=10;
 let mode='practice', phase='title', elapsed=0, timeLeft=TIME_LIMIT;
 let countdownSec=null, countdownPulse=0;
+let stageNum=1, boss=null, bossPhase='none'; // bossPhase: 'none' | 'fighting' | 'defeated'
+// from stage 2 onward the world grows to 2 screens tall and the camera scrolls up to follow —
+// a surprise reveal of new sky/enemies above what used to be a hard ceiling
+let worldH=0, camY=0;
+const stars=[];
+function tallWorld(){ return mode==='stage' && stageNum>=2; }
+function updateWorldHeight(){
+  const wasTall=worldH>H;
+  worldH = tallWorld() ? H*2 : H;
+  nest.x=W*0.5; nest.y=worldH-58;
+  camY=Math.min(camY, Math.max(0,worldH-H));
+  if(tallWorld() && !wasTall){
+    stars.length=0;
+    for(let i=0;i<50;i++) stars.push({x:Math.random()*W, y:Math.random()*(worldH*0.6), s:1+Math.random()*2, ph:Math.random()*10});
+    for(let i=0;i<4;i++) clouds.push({x:Math.random()*W, y:Math.random()*(worldH*0.55), s:.5+Math.random()*.9, sp:5+Math.random()*8});
+  }
+}
 const enemies=[], tail=[], loose=[], puffs=[], hist=[], delivering=[], popups=[];
 function easeOutBack(x){ const c1=1.70158, c3=c1+1; return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2); }
 const SP=7;               // history frames between followers
@@ -304,15 +328,20 @@ function resetAll(){ L.x=W*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.ifra
   tail.length=0; loose.length=0; enemies.length=0; hist.length=0; score=0; banked=0;
   delivering.length=0; popups.length=0; elapsed=0; timeLeft=TIME_LIMIT;
   countdownSec=null; countdownPulse=0;
+  stageNum=1; boss=null; bossPhase='none'; camY=0;
+  updateWorldHeight();
   for(let i=0;i<5;i++) spawnEnemy(); }
 function respawnLovot(){ L.x=nest.x; L.y=nest.y-120; L.vx=0; L.vy=0; L.balloons=2; L.iframe=1.6; hist.length=0; }
 
 function spawnEnemy(){
+  if(mode==='stage' && stageNum===3) return; // no fodder minis during the boss fight
   const side=Math.random()<0.5?-1:1;
   const golden=Math.random()<0.08;   // rare golden mini: sparkly, worth 10x when delivered
-  const kind=Math.random()<0.25?'spike':'normal';
-  enemies.push({ x: side<0? 40: W-40, y: 90+Math.random()*(H*0.55),
-    vx: side*(24+Math.random()*26), vy:0, bob:Math.random()*7, r:17,
+  const spikeChance=mode==='stage' ? STAGE_SPIKE[stageNum-1] : 0.25;
+  const speedMul=mode==='stage' ? STAGE_SPEED[stageNum-1] : 1;
+  const kind=Math.random()<spikeChance?'spike':'normal';
+  enemies.push({ x: side<0? 40: W-40, y: 90+Math.random()*(worldH*0.55),
+    vx: side*(24+Math.random()*26)*speedMul, vy:0, bob:Math.random()*7, r:17,
     color: golden?'#ffd700':palette[(Math.random()*palette.length)|0], golden, kind, t:Math.random()*10 });
   if(golden) SFX.shine();
 }
@@ -361,6 +390,36 @@ function loseBalloon(){ L.balloons--; L.iframe=1.2; L.vy=-160; L.vx*=-0.4; SFX.p
     respawnLovot(); } }
 function tailPos(i){ const idx=Math.min((i+1)*SP, hist.length-1); return hist[idx]||{x:L.x,y:L.y}; }
 
+// ---------- stage-clear boss (stage 3) ----------
+function announceStage(title,sub){
+  popups.push({x:W*0.5,y:camY+H*0.28,text:title,text2:sub,color:'#ffd27a',color2:'#fff3da',
+    size:28,size2:15,life:2.0,life0:2.0,vy:-10,bounce:true});
+  SFX.shine();
+}
+function spawnBoss(){
+  enemies.length=0; // clear the field so the fight reads clean
+  const baseY=camY+H*0.3;
+  boss={ x:W*0.5, y:baseY, baseY, dir:Math.random()<0.5?-1:1, r:54, hp:BOSS_HITS, maxHp:BOSS_HITS,
+    iframe:0, flash:0, t:Math.random()*10, color:palette[(Math.random()*palette.length)|0] };
+  bossPhase='fighting';
+}
+function defeatBoss(){
+  const bx=boss.x, by=boss.y, n=BOSS_REWARD;
+  const batch={remaining:n, total:0, hasGolden:false, count:n};
+  for(let i=0;i<n;i++){ const ang=(i/n)*Math.PI*2, sx=bx+Math.cos(ang)*14, sy=by+Math.sin(ang)*14;
+    const pts=i+1; batch.total+=pts;
+    delivering.push({x:sx,y:sy,sx,sy,color:palette[i%palette.length],golden:false,pts,delay:i*0.08,t:0,prog:0,batch}); }
+  for(let k=0;k<18;k++) addPuff(bx+(Math.random()-0.5)*70, by+(Math.random()-0.5)*70, palette[(Math.random()*palette.length)|0]);
+  popups.push({x:bx,y:by-boss.r-24,text:'ボス撃破！',color:'#ff9db0',size:32,life:1.4,life0:1.4,vy:-30,bounce:true});
+  SFX.deliver();
+  boss=null; bossPhase='defeated';
+}
+function checkStageAdvance(){
+  if(mode!=='stage') return;
+  if(stageNum===1 && banked>=STAGE_TARGETS[0]){ stageNum=2; updateWorldHeight(); announceStage('ステージ2 とうじょう！','上にも世界が広がっている…？'); }
+  else if(stageNum===2 && banked>=STAGE_TARGETS[0]+STAGE_TARGETS[1]){ stageNum=3; announceStage('ボス とうじょう！','たくさん踏みつけて倒そう！'); spawnBoss(); }
+}
+
 // ---------- loop ----------
 let last=performance.now();
 function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
@@ -377,8 +436,13 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   const m=40;
   if(L.x<m){L.x=m;L.vx*=-0.32;} if(L.x>W-m){L.x=W-m;L.vx*=-0.32;}
   const ceil=-SPRTOPY+6; if(L.y<ceil){L.y=ceil; if(L.vy<0)L.vy*=-0.25;}
-  const gnd=H-58; if(L.y>gnd){L.y=gnd; if(L.vy>0){L.squash=Math.min(1,L.vy/900);L.vy*=-0.14;}}
+  const gnd=worldH-58; if(L.y>gnd){L.y=gnd; if(L.vy>0){L.squash=Math.min(1,L.vy/900);L.vy*=-0.14;}}
   if(L.iframe>0) L.iframe-=dt;
+
+  // camera: stays put on a single screen until the world grows (stage 2+), then smoothly
+  // scrolls to follow the lovot up past the old ceiling — the reveal is the "surprise"
+  if(worldH>H){ const targetCam=Math.min(Math.max(0,L.y-H*0.42), worldH-H); camY+=(targetCam-camY)*Math.min(1,dt*4); }
+  else camY=0;
 
   // history for tail
   hist.unshift({x:L.x,y:L.y}); if(hist.length> (tail.length+2)*SP+30) hist.length=(tail.length+2)*SP+30;
@@ -386,7 +450,14 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   // enemies
   for(const e of enemies){ e.t+=dt; e.x+=e.vx*dt; e.y+=Math.sin(e.t*1.3+e.bob)*10*dt*3;
     if(e.x<30){e.x=30;e.vx*=-1;} if(e.x>W-30){e.x=W-30;e.vx*=-1;}
-    if(e.y<80)e.y=80; if(e.y>H-100)e.y=H-100; }
+    if(e.y<80)e.y=80; if(e.y>worldH-100)e.y=worldH-100; }
+
+  // boss (stage 3): slow side-to-side patrol with a gentle bob
+  if(boss){ boss.t+=dt; boss.x+=boss.dir*46*dt;
+    if(boss.x<80){boss.x=80; boss.dir=1;} if(boss.x>W-80){boss.x=W-80; boss.dir=-1;}
+    boss.y=boss.baseY+Math.sin(boss.t*1.1)*22;
+    if(boss.iframe>0) boss.iframe-=dt;
+    boss.flash=Math.max(0,boss.flash-dt*3); }
 
   // collisions lovot vs enemies (hit-circle centered on the sprite's visual body, not the eye anchor).
   // each enemy kind has spiky sides and a set of safe approach directions (see ENEMY_KINDS) —
@@ -403,12 +474,29 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
       } }
   }
 
+  // boss collision: only safe from the top, and takes several stomps to go down
+  if(boss && L.iframe<=0){
+    const dx=L.x-boss.x, dy0=hcy-boss.y, d=Math.hypot(dx,dy0);
+    if(d < hitR+boss.r){
+      const dy=dy0-boss.r*0.3;
+      const dir=Math.abs(dy)>Math.abs(dx) ? (dy<0?'top':'bottom') : (dx<0?'left':'right');
+      if(dir==='top'){
+        if(boss.iframe<=0){
+          boss.hp--; boss.iframe=0.45; boss.flash=1; L.vy=-320; L.squash=0.5;
+          addPuff(boss.x,boss.y-boss.r*0.4,boss.color); SFX.hit();
+          popups.push({x:boss.x,y:boss.y-boss.r-14,text:'HIT!',color:'#fff3da',size:20,life:0.5,life0:0.5,vy:-40});
+          if(boss.hp<=0) defeatBoss();
+        }
+      } else { if(tail.length>0) scatterTail(); else loseBalloon(); }
+    }
+  }
+
   // loose (scattered) update + recollect
   for(let i=loose.length-1;i>=0;i--){ const o=loose[i];
     o.arm=Math.max(0,o.arm-dt); o.life-=dt;
     o.vy+=P.grav*0.7*dt; o.vy-=o.vy*0.8*dt; o.vx-=o.vx*1.4*dt;
     o.x+=o.vx*dt; o.y+=o.vy*dt;
-    const lg=H-52; if(o.y>lg){o.y=lg; o.vy*=-0.35; o.vx*=0.6;}
+    const lg=worldH-52; if(o.y>lg){o.y=lg; o.vy*=-0.35; o.vx*=0.6;}
     if(o.x<20)o.x=20; if(o.x>W-20)o.x=W-20;
     if(o.arm<=0 && Math.hypot(L.x-o.x,hcy-o.y) < hitR+16){ tail.push({color:o.color,golden:o.golden}); loose.splice(i,1); addPuff(o.x,o.y,o.color); SFX.recollect(); continue; }
     if(o.life<=0){ loose.splice(i,1); }
@@ -431,7 +519,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     d.t+=dt; const prog=Math.min(1,d.t/0.45), ease=1-(1-prog)*(1-prog); d.prog=prog;
     d.x=d.sx+(nest.x-d.sx)*ease; d.y=d.sy+(nest.y-10-d.sy)*ease-Math.sin(prog*Math.PI)*36;
     if(prog>=1){
-      score+=d.pts; banked++; addPuff(nest.x,nest.y-10,d.color); SFX.recollect();
+      score+=d.pts; banked++; checkStageAdvance(); addPuff(nest.x,nest.y-10,d.color); SFX.recollect();
       popups.push({x:nest.x+(Math.random()-0.5)*24,y:nest.y-34,text:(d.golden?'✨+':'+')+d.pts,
         color:d.golden?'#ffd700':'#fff3da',size:d.golden?30:22,life:0.6,life0:0.6,vy:-46});
       if(d.golden) for(let k=0;k<6;k++) addPuff(nest.x+(Math.random()-0.5)*30, nest.y-14+(Math.random()-0.5)*16, '#ffe9a8');
@@ -455,7 +543,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     if(csec!==countdownSec){ countdownSec=csec; countdownPulse=0; } else countdownPulse+=dt;
     if(timeLeft<=0) finishGame();
   }
-  else if(mode==='stage' && banked>=STAGE_TARGET) finishGame();
+  else if(mode==='stage' && bossPhase==='defeated' && delivering.length===0) finishGame();
 
   // floating score popups
   for(let i=popups.length-1;i>=0;i--){ const p=popups[i]; p.life-=dt; p.y+=p.vy*dt; p.vy*=Math.max(0,1-dt*1.5);
@@ -473,7 +561,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   L.armR += (( 0.5+L.flapPulseR*1.6)-L.armR)*Math.min(1,dt*22);
   L.squash=Math.max(0,L.squash-dt*3); L.wing=Math.max(0,L.wing-dt);
   SPR.upTimer=Math.max(0,SPR.upTimer-dt);
-  for(const cl of clouds){ cl.x-=cl.sp*dt*3; if(cl.x<-120){cl.x=W+80;cl.y=Math.random()*innerHeight*0.6;} }
+  for(const cl of clouds){ cl.x-=cl.sp*dt*3; if(cl.x<-120){cl.x=W+80;cl.y=Math.random()*worldH*0.6;} }
 
   document.getElementById('score').textContent=score;
   document.getElementById('carry').textContent='抱えてる: '+tail.length;
@@ -484,7 +572,14 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
 }
 function updateModeStat(){
   const el=document.getElementById('modeStat');
-  if(mode==='stage') el.textContent='納品 '+Math.min(banked,STAGE_TARGET)+' / '+STAGE_TARGET+'体';
+  if(mode==='stage'){
+    if(stageNum<3){
+      const prevThresh=stageNum===1?0:STAGE_TARGETS[0], target=STAGE_TARGETS[stageNum-1];
+      el.textContent='ステージ'+stageNum+'  納品 '+Math.min(banked-prevThresh,target)+' / '+target+'体';
+    } else {
+      el.textContent=boss ? 'ボスHP '+Math.max(0,boss.hp)+' / '+boss.maxHp : 'ステージ3';
+    }
+  }
   else if(mode==='time'){ const s=Math.ceil(timeLeft); el.textContent='残り '+Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
   else el.textContent='';
 }
@@ -514,27 +609,45 @@ function drawCountdown(){
 }
 
 // ---------- draw ----------
+function lerpHex(a,b,t){
+  const pa=parseInt(a.slice(1),16), pb=parseInt(b.slice(1),16);
+  const ar=(pa>>16)&255, ag=(pa>>8)&255, ab=pa&255, br=(pb>>16)&255, bg=(pb>>8)&255, bb=pb&255;
+  return `rgb(${Math.round(ar+(br-ar)*t)},${Math.round(ag+(bg-ag)*t)},${Math.round(ab+(bb-ab)*t)})`;
+}
 function draw(){
-  const g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,'#a9d4ee'); g.addColorStop(.55,'#cfe6f2'); g.addColorStop(1,'#f6e9d8');
-  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  // altitude fraction (0 at the ground, 1 near the top of a tall stage-2+ world) drives a
+  // dreamier upper-sky palette and twinkling stars — the "surprise" for climbing up
+  const alt = worldH>H ? Math.min(1,1-camY/(worldH-H)) : 0;
+  ctx.save(); ctx.translate(0,-camY);
+
+  const g=ctx.createLinearGradient(0,camY,0,camY+H);
+  g.addColorStop(0,   lerpHex('#a9d4ee','#e9d9ff',alt));
+  g.addColorStop(.55, lerpHex('#cfe6f2','#ffe3c2',alt));
+  g.addColorStop(1,   lerpHex('#f6e9d8','#ffd0dd',alt));
+  ctx.fillStyle=g; ctx.fillRect(0,camY,W,H);
+  if(alt>0.1){ for(const st of stars){
+    const a=Math.max(0,alt-0.1)*1.15*(0.55+0.45*Math.sin(L.bob*2+st.ph));
+    if(a<=0.02) continue;
+    ctx.fillStyle=`rgba(255,250,225,${a})`; ctx.beginPath(); ctx.arc(st.x,st.y,st.s,0,7); ctx.fill(); } }
   const sg=ctx.createRadialGradient(W*0.8,H*0.15,10,W*0.8,H*0.15,170); sg.addColorStop(0,'rgba(255,246,214,.9)'); sg.addColorStop(1,'rgba(255,246,214,0)');
   ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(W*0.8,H*0.15,170,0,7); ctx.fill();
   for(const cl of clouds){ ctx.fillStyle='rgba(255,255,255,.72)'; puff(cl.x,cl.y,32*cl.s); }
 
-  // hills
-  ctx.fillStyle='#bfe3a6'; ctx.beginPath(); ctx.moveTo(0,H); ctx.lineTo(0,H-50);
-  ctx.quadraticCurveTo(W*0.25,H-84,W*0.5,H-52); ctx.quadraticCurveTo(W*0.78,H-20,W,H-58); ctx.lineTo(W,H); ctx.fill();
-  ctx.fillStyle='#a9d792'; ctx.beginPath(); ctx.moveTo(0,H); ctx.lineTo(0,H-26);
-  ctx.quadraticCurveTo(W*0.4,H-52,W*0.7,H-30); ctx.quadraticCurveTo(W*0.9,H-14,W,H-34); ctx.lineTo(W,H); ctx.fill();
+  // hills (anchored to the bottom of the world, not the screen — they scroll out of view
+  // once the camera climbs into a taller stage-2+ world)
+  ctx.fillStyle='#bfe3a6'; ctx.beginPath(); ctx.moveTo(0,worldH); ctx.lineTo(0,worldH-50);
+  ctx.quadraticCurveTo(W*0.25,worldH-84,W*0.5,worldH-52); ctx.quadraticCurveTo(W*0.78,worldH-20,W,worldH-58); ctx.lineTo(W,worldH); ctx.fill();
+  ctx.fillStyle='#a9d792'; ctx.beginPath(); ctx.moveTo(0,worldH); ctx.lineTo(0,worldH-26);
+  ctx.quadraticCurveTo(W*0.4,worldH-52,W*0.7,worldH-30); ctx.quadraticCurveTo(W*0.9,worldH-14,W,worldH-34); ctx.lineTo(W,worldH); ctx.fill();
 
   drawNest();
   for(const o of loose){ const blink = o.life<1.5 && (Math.floor(o.life*8)%2===0); if(!blink) miniLovot(o.x,o.y,0.78,o.color,'sad',o.golden); }
   for(const e of enemies) miniLovot(e.x,e.y,0.82,e.color,'idle',e.golden,ENEMY_KINDS[e.kind||'normal'].spikes);
+  if(boss) drawBoss();
   // tail followers (far first)
   for(let i=tail.length-1;i>=0;i--){ const p=tailPos(i); miniLovot(p.x,p.y,0.7,tail[i].color,'happy',tail[i].golden); }
   for(const d of delivering) miniLovot(d.x,d.y,0.7-d.prog*0.3,d.color,'happy',d.golden);
   drawLovot();
-  drawCountdown();
   for(const p of puffs){ ctx.fillStyle=`rgba(255,255,255,${Math.max(0,p.a)*0.7})`; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill();
     ctx.strokeStyle=hexA(p.c,Math.max(0,p.a)); ctx.lineWidth=2; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.stroke(); }
   for(const p of popups){ const inProg=Math.min(1,(p.life0-p.life)/0.12);
@@ -553,6 +666,8 @@ function draw(){
     ctx.strokeStyle='rgba(255,60,80,.9)'; for(const e of enemies){ ctx.beginPath(); ctx.arc(e.x,e.y,e.r,0,7); ctx.stroke(); }
     ctx.strokeStyle='rgba(255,180,0,.85)'; for(const o of loose){ ctx.beginPath(); ctx.arc(o.x,o.y,16,0,7); ctx.stroke(); }
     ctx.strokeStyle='rgba(120,220,120,.8)'; ctx.beginPath(); ctx.arc(nest.x,nest.y,nest.r,0,7); ctx.stroke(); }
+  ctx.restore(); // back to screen space for HUD-like overlays
+  drawCountdown();
 }
 function hexA(h,a){ return `rgba(${parseInt(h.slice(1,3),16)},${parseInt(h.slice(3,5),16)},${parseInt(h.slice(5,7),16)},${a})`; }
 function puff(x,y,r){ ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.arc(x+r*.9,y+r*.15,r*.8,0,7); ctx.arc(x-r*.9,y+r*.2,r*.72,0,7); ctx.arc(x+r*.2,y-r*.35,r*.7,0,7); ctx.fill(); }
@@ -676,6 +791,22 @@ function miniLovot(x,y,sc,color,mood,golden,spikeSides){
   }
   ctx.restore();
 }
+function drawBoss(){
+  // a big mini with a danger-signaling spike ring (only the top is safe) plus a flash-white
+  // hit feedback and a floating HP-pip bar so its remaining stomps are readable at a glance
+  const sc=2.6;
+  ctx.save();
+  if(boss.flash>0){ ctx.save(); ctx.globalAlpha=boss.flash*0.55; ctx.fillStyle='#fff';
+    ctx.beginPath(); ctx.arc(boss.x,boss.y,boss.r*1.15,0,7); ctx.fill(); ctx.restore(); }
+  miniLovot(boss.x,boss.y,sc,boss.color,'idle',false,['bottom','left','right']);
+  ctx.restore();
+  const pipW=14, gap=6, total=boss.maxHp*pipW+(boss.maxHp-1)*gap, startX=boss.x-total/2, py=boss.y-boss.r-26;
+  for(let i=0;i<boss.maxHp;i++){
+    ctx.fillStyle = i<boss.hp ? '#ff6f8e' : 'rgba(255,255,255,.35)';
+    ctx.strokeStyle='rgba(80,40,50,.4)'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(startX+i*(pipW+gap)+pipW/2, py, pipW/2, 0, 7); ctx.fill(); ctx.stroke();
+  }
+}
 function shade(h){ const r=Math.max(0,parseInt(h.slice(1,3),16)-40),g=Math.max(0,parseInt(h.slice(3,5),16)-40),b=Math.max(0,parseInt(h.slice(5,7),16)-40); return `rgb(${r},${g},${b})`; }
 
 function drawLovot(){
@@ -752,6 +883,18 @@ function finishGame(){
   bestEl.textContent=bestText;
   document.getElementById('result').classList.remove('hidden');
 }
+function buildShareText(){
+  const mm=Math.floor(elapsed/60), ss=Math.floor(elapsed%60), time=mm+':'+String(ss).padStart(2,'0');
+  if(mode==='stage') return `LOVOTバルーンで全3ステージ制覇！🎈\nスコア${score}点・納品${banked}体・タイム${time}`;
+  if(mode==='time') return `LOVOTバルーンの1分間チャレンジでスコア${score}点獲得！🎈`;
+  return `LOVOTバルーンで遊んだよ！スコア${score}点🎈`;
+}
+document.getElementById('r_share').addEventListener('click',()=>{
+  const text=buildShareText();
+  if(navigator.share){ navigator.share({title:'LOVOTバルーン',text,url:location.href}).catch(()=>{}); return; }
+  const url='https://twitter.com/intent/tweet?text='+encodeURIComponent(text)+'&url='+encodeURIComponent(location.href);
+  window.open(url,'_blank','noopener');
+});
 document.getElementById('r_retry').addEventListener('click',()=>startGame(mode));
 document.getElementById('r_toTitle').addEventListener('click',()=>{
   document.getElementById('result').classList.add('hidden');
