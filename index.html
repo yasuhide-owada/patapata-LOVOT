@@ -117,7 +117,7 @@
       ・左右をタップしてパタパタ羽ばたこう<br>
       ・ちびラボットを上から踏んで仲間にしよう<br>
       ・巣まで連れて帰って納品！<br>
-      ・横からぶつかると仲間が散らばっちゃうので注意<br>
+      ・トゲの部分にぶつかるとダメージ<br>
       ・ゲームパッド接続時は十字キー左右で傾き、Aボタンで羽ばたき(タイトルでは上下で選択、Aで決定)
       <div class="tease">💡 一度にたくさんのちびラボットを集めて巣に返すとボーナス…!?</div>
     </div>
@@ -189,9 +189,18 @@
 <script>
 const cv=document.getElementById('c'), ctx=cv.getContext('2d');
 let W=0,H=0,DPR=1;
+// gameplay-safe area: on most phones (portrait ~9:16 to ~9:21) GW/GX just equal W/0, so nothing
+// changes. On an unusually wide screen (tablet) the play field is capped to a phone-like width and
+// centered, so nest/boss/enemy layout keeps the same feel across hardware instead of stretching
+// sideways — the background (sky/hills/stars) still renders full-bleed across all of W, so there
+// are no black bars, just extra scenery beyond the safe column.
+let GW=0, GX=0;
+const SAFE_MIN_R=16/9;
+function updateSafeArea(){ const r=H/W;
+  if(r<SAFE_MIN_R){ GW=H/SAFE_MIN_R; GX=(W-GW)/2; } else { GW=W; GX=0; } }
 function resize(){ DPR=Math.min(window.devicePixelRatio||1,2.5); W=innerWidth; H=innerHeight;
   cv.width=Math.floor(W*DPR); cv.height=Math.floor(H*DPR); ctx.setTransform(DPR,0,0,DPR,0,0);
-  updateWorldHeight(); }
+  updateSafeArea(); updateWorldHeight(); }
 addEventListener('resize',resize);
 
 const P={ float:1.4, grav:760, flap:230, side:150, interval:160, maxUp:330, hit:0.85 };
@@ -205,12 +214,17 @@ const TIME_LIMIT=60;
 // stage-clear mode: 3 stages — the first two are delivery quotas that get spikier/faster,
 // the third replaces the quota with a multi-hit boss (see spawnBoss/defeatBoss below).
 const STAGE_TARGETS=[8,14], STAGE_SPIKE=[0,0.25,0.4], STAGE_SPEED=[0.85,1,1.2];
-const BOSS_HITS=4, BOSS_REWARD=10;
+const BOSS_HITS=4, BOSS_REWARD=10, BOSS_HOVER_DUR=2;
 const ENEMY_SPAWN_GRACE=3; // seconds a freshly (re)spawned mini is see-through and can't be touched
 const INVINCIBLE_DUR=8, STAR_MIN=15, STAR_MAX=25; // invincibility star: duration, and its spawn-interval range
 let mode='practice', phase='title', elapsed=0, timeLeft=TIME_LIMIT;
 let countdownSec=null, countdownPulse=0;
 let stageNum=1, boss=null, bossPhase='none'; // bossPhase: 'none' | 'fighting' | 'defeated'
+let pendingAdvance=null, advanceTimer=-1; // stage advance waits for the delivery flight to finish,
+  // then holds a quiet ADVANCE_PAUSE beat before the next stage actually reveals itself
+const ADVANCE_PAUSE=3;
+let pendingFinish=false, finishTimer=-1; // same idea for the stage-clear result screen: wait for the
+  // boss-reward delivery to land, then hold a beat so its "撃破/とどけた" banners are actually readable
 let invincible=0, nextStarAt=0; // invincibility star: seconds left / elapsed-time of the next spawn
 // from stage 2 onward the world grows to 2 screens tall and the camera scrolls up to follow —
 // a surprise reveal of new sky/enemies above what used to be a hard ceiling
@@ -220,7 +234,7 @@ function tallWorld(){ return mode==='stage' && stageNum>=2; }
 function updateWorldHeight(){
   const wasTall=worldH>H;
   worldH = tallWorld() ? H*2 : H;
-  nest.x=W*0.5; nest.y=worldH-58;
+  nest.x=GX+GW*0.5; nest.y=worldH-58;
   camY=Math.min(camY, Math.max(0,worldH-H));
   if(tallWorld() && !wasTall){
     // stage 2 starts grounded, not floating in empty upper sky: snap the camera and the lovot
@@ -234,7 +248,7 @@ function updateWorldHeight(){
     // a few minis peeking in just above the old ceiling line — visibly cut off at the top edge
     // of the screen from ground level, the "huh, what's up there?" hook to go investigate
     for(let i=0;i<5;i++){ const side=Math.random()<0.5?-1:1;
-      enemies.push({ x: side<0? 40: W-40, y: (worldH-H)-10-Math.random()*50,
+      enemies.push({ x: side<0? GX+40: GX+GW-40, y: (worldH-H)-10-Math.random()*50,
         vx: side*(24+Math.random()*26), vy:0, bob:Math.random()*7, r:17,
         color:palette[(Math.random()*palette.length)|0], golden:false, kind:'normal', t:Math.random()*10,
         grace:ENEMY_SPAWN_GRACE }); }
@@ -242,7 +256,7 @@ function updateWorldHeight(){
     // feel busy right away instead of slowly trickling in via one-for-one respawns — kept well
     // clear of the world's hard ceiling so there's always room to stomp them from above
     for(let i=0;i<8;i++){ const side=Math.random()<0.5?-1:1, golden=Math.random()<0.08;
-      enemies.push({ x: side<0? 40: W-40, y: 150+Math.random()*((worldH-H)-200),
+      enemies.push({ x: side<0? GX+40: GX+GW-40, y: 150+Math.random()*((worldH-H)-200),
         vx: side*(24+Math.random()*26), vy:0, bob:Math.random()*7, r:17,
         color: golden?'#ffd700':palette[(Math.random()*palette.length)|0], golden, kind:Math.random()<0.25?'spike':'normal',
         t:Math.random()*10, grace:ENEMY_SPAWN_GRACE });
@@ -250,7 +264,7 @@ function updateWorldHeight(){
     // and a population around ground level too — the player lands right back at the nest for
     // stage 2, so the screen they're actually looking at needs company, not just the reveal above
     for(let i=0;i<6;i++){ const side=Math.random()<0.5?-1:1, golden=Math.random()<0.08;
-      enemies.push({ x: side<0? 40: W-40, y: (worldH-H)+120+Math.random()*(H-240),
+      enemies.push({ x: side<0? GX+40: GX+GW-40, y: (worldH-H)+120+Math.random()*(H-240),
         vx: side*(24+Math.random()*26), vy:0, bob:Math.random()*7, r:17,
         color: golden?'#ffd700':palette[(Math.random()*palette.length)|0], golden, kind:Math.random()<0.25?'spike':'normal',
         t:Math.random()*10, grace:ENEMY_SPAWN_GRACE });
@@ -324,6 +338,7 @@ const SFX=(()=>{
       tone(null,1320,0.22,'square',0.16,null,0.16); },
     fanfare:  ()=>{ tone(null,784,0.14,'square',0.15); tone(null,988,0.14,'square',0.15,null,0.1);
       tone(null,1175,0.26,'square',0.17,null,0.2); },
+    bossShot: ()=>tone(null,240,0.16,'sawtooth',0.16,700),
   };
   // voice-tracked file cues (retriggered rapidly, same as their synth counterparts above) vs.
   // one-shot layered cues (deliver/miss/sparkle/shine/power/fanfare) that are fine to overlap.
@@ -331,7 +346,8 @@ const SFX=(()=>{
   const files={ flap:'assets/sounds/flap.mp3', befriend:'assets/sounds/befriend.wav',
     recollect:'assets/sounds/recollect.mp3', hit:'assets/sounds/hit.wav', deliver:'assets/sounds/deliver.wav',
     pop:'assets/sounds/風船割れる.mp3', miss:'assets/sounds/one_miss.wav', sparkle:'assets/sounds/きらきら輝く3.mp3',
-    shine:'assets/sounds/可愛く輝く1.mp3', power:'assets/sounds/star.mp3', fanfare:'assets/sounds/スタジアムの歓声.mp3' };
+    shine:'assets/sounds/可愛く輝く1.mp3', power:'assets/sounds/star.mp3', fanfare:'assets/sounds/スタジアムの歓声.mp3',
+    bossShot:'assets/sounds/boss_shot.mp3' };
   // decode every file up front into an AudioBuffer: playback is then a plain AudioBufferSourceNode
   // (sample-accurate, no per-play seek/decode latency) instead of re-seeking a shared <audio>
   // element, which could fall behind under rapid retriggers (e.g. recollect firing every 0.1s
@@ -412,11 +428,12 @@ const StarAmbient=(()=>{
   return { set };
 })();
 
-function resetAll(){ L.x=W*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.iframe=0;
+function resetAll(){ L.x=GX+GW*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.iframe=0;
   tail.length=0; loose.length=0; enemies.length=0; hist.length=0; score=0; banked=0;
   delivering.length=0; popups.length=0; elapsed=0; timeLeft=TIME_LIMIT;
   countdownSec=null; countdownPulse=0;
   stageNum=1; boss=null; bossPhase='none'; camY=0; bossBullets.length=0;
+  pendingAdvance=null; advanceTimer=-1; pendingFinish=false; finishTimer=-1;
   powerStars.length=0; invincible=0; nextStarAt=STAR_MIN+Math.random()*(STAR_MAX-STAR_MIN);
   BGM.endOverride(); StarAmbient.set(false);
   updateWorldHeight();
@@ -430,7 +447,7 @@ function spawnEnemy(){
   const spikeChance=mode==='stage' ? STAGE_SPIKE[stageNum-1] : 0.25;
   const speedMul=mode==='stage' ? STAGE_SPEED[stageNum-1] : 1;
   const kind=Math.random()<spikeChance?'spike':'normal';
-  enemies.push({ x: side<0? 40: W-40, y: 90+Math.random()*(worldH*0.55),
+  enemies.push({ x: side<0? GX+40: GX+GW-40, y: 90+Math.random()*(worldH*0.55),
     vx: side*(24+Math.random()*26)*speedMul, vy:0, bob:Math.random()*7, r:17,
     color: golden?'#ffd700':palette[(Math.random()*palette.length)|0], golden, kind, t:Math.random()*10,
     grace:ENEMY_SPAWN_GRACE });
@@ -535,8 +552,11 @@ function announceStage(title,sub){
 }
 function spawnBoss(){
   enemies.length=0; bossBullets.length=0; // clear the field so the fight reads clean
+  // a star grabbed just before the stage transition can still be active here — end it first so
+  // its expiry (or a leftover playOverride from it) can't hijack the dedicated boss track mid-fight
+  powerStars.length=0; invincible=0; StarAmbient.set(false); BGM.endOverride();
   const baseY=camY+H*0.3;
-  boss={ x:W*0.5, y:baseY, baseY, dir:Math.random()<0.5?-1:1, r:54, hp:BOSS_HITS, maxHp:BOSS_HITS,
+  boss={ x:GX+GW*0.5, y:baseY, baseY, dir:Math.random()<0.5?-1:1, r:54, hp:BOSS_HITS, maxHp:BOSS_HITS,
     iframe:0, flash:0, t:Math.random()*10, color:palette[(Math.random()*palette.length)|0],
     state:'patrol', stateT:0, alpha:1, throwCooldown:1.6, telegraph:0 };
   bossPhase='fighting';
@@ -561,11 +581,19 @@ function bossPattern(){ if(boss.hp>=4) return 1; if(boss.hp===3) return 2; if(bo
 function throwBossBullet(){
   bossBullets.push({ x:boss.x, y:boss.y-boss.r*0.6, vx:(Math.random()-0.5)*170, vy:-430-Math.random()*70,
     r:9, color:boss.color, life:4 });
+  SFX.bossShot();
 }
 function checkStageAdvance(){
-  if(mode!=='stage') return;
-  if(stageNum===1 && banked>=STAGE_TARGETS[0]){ stageNum=2; updateWorldHeight(); announceStage('ステージ2 とうじょう！', STAGE_TARGETS[1]+'体のミニを帰巣させよう'); }
-  else if(stageNum===2 && banked>=STAGE_TARGETS[0]+STAGE_TARGETS[1]){ stageNum=3; announceStage('ボス とうじょう！','たくさん踏みつけて倒そう！'); spawnBoss(); }
+  if(mode!=='stage' || pendingAdvance) return;
+  // just flag the advance here — the actual stage change waits until every mini from this
+  // delivery has finished flying home (see the pendingAdvance handling in tick())
+  if(stageNum===1 && banked>=STAGE_TARGETS[0]){ pendingAdvance=2; advanceTimer=-1; }
+  else if(stageNum===2 && banked>=STAGE_TARGETS[0]+STAGE_TARGETS[1]){ pendingAdvance=3; advanceTimer=-1; }
+}
+function runStageAdvance(){
+  if(pendingAdvance===2){ stageNum=2; updateWorldHeight(); announceStage('ステージ2 とうじょう！', STAGE_TARGETS[1]+'体のミニを帰巣させよう'); }
+  else if(pendingAdvance===3){ stageNum=3; announceStage('ボス とうじょう！','たくさん踏みつけて倒そう！'); spawnBoss(); }
+  pendingAdvance=null; advanceTimer=-1;
 }
 
 // ---------- loop ----------
@@ -583,7 +611,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   if(L.vy<-P.maxUp) L.vy=-P.maxUp;
   L.x+=L.vx*dt; L.y+=L.vy*dt;
   const m=40;
-  if(L.x<m){L.x=m;L.vx*=-0.32;} if(L.x>W-m){L.x=W-m;L.vx*=-0.32;}
+  if(L.x<GX+m){L.x=GX+m;L.vx*=-0.32;} if(L.x>GX+GW-m){L.x=GX+GW-m;L.vx*=-0.32;}
   const ceil=-SPRTOPY+6; if(L.y<ceil){L.y=ceil; if(L.vy<0)L.vy*=-0.25;}
   const gnd=worldH-58; if(L.y>gnd){L.y=gnd; if(L.vy>0){L.squash=Math.min(1,L.vy/900);L.vy*=-0.14;}}
   if(L.iframe>0) L.iframe-=dt;
@@ -598,7 +626,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
 
   // enemies
   for(const e of enemies){ e.t+=dt; e.x+=e.vx*dt; e.y+=Math.sin(e.t*1.3+e.bob)*10*dt*3;
-    if(e.x<30){e.x=30;e.vx*=-1;} if(e.x>W-30){e.x=W-30;e.vx*=-1;}
+    if(e.x<GX+30){e.x=GX+30;e.vx*=-1;} if(e.x>GX+GW-30){e.x=GX+GW-30;e.vx*=-1;}
     if(e.y<150)e.y=150; if(e.y>worldH-100)e.y=worldH-100; // 150, not 80: leaves room above to stomp from
     if(e.grace>0) e.grace=Math.max(0,e.grace-dt); }
 
@@ -610,7 +638,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     if(boss.state==='patrol'){
       const pat=bossPattern(), moving=pat!==3, fast=pat===2||pat===4, speed=fast?104:46;
       if(moving){ boss.x+=boss.dir*speed*dt;
-        if(boss.x<80){boss.x=80; boss.dir=1;} if(boss.x>W-80){boss.x=W-80; boss.dir=-1;} }
+        if(boss.x<GX+80){boss.x=GX+80; boss.dir=1;} if(boss.x>GX+GW-80){boss.x=GX+GW-80; boss.dir=-1;} }
       boss.y=boss.baseY+Math.sin(boss.t*1.1)*22;
       if(pat>=3){ // patterns 3 & 4 lob a bullet on a telegraphed cycle
         if(boss.telegraph>0){ boss.telegraph-=dt; if(boss.telegraph<=0){ throwBossBullet(); boss.throwCooldown=2.0; } }
@@ -618,12 +646,17 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
       }
     } else if(boss.state==='flee'){
       boss.stateT+=dt; const dur=0.55, t=Math.min(1,boss.stateT/dur), e=1-(1-t)*(1-t);
-      boss.alpha=1-0.6*e; boss.x=boss.fleeFromX+(W*0.5-boss.fleeFromX)*e; boss.y=boss.fleeFromY+(boss.fleeToY-boss.fleeFromY)*e;
-      if(t>=1){ boss.state='descend'; boss.stateT=0; }
+      boss.alpha=1-0.6*e; boss.x=boss.fleeFromX+(GX+GW*0.5-boss.fleeFromX)*e; boss.y=boss.fleeFromY+(boss.fleeToY-boss.fleeFromY)*e;
+      if(t>=1){ boss.state='hover'; boss.stateT=0; }
+    } else if(boss.state==='hover'){
+      // regroups up in the air for a beat before diving back in — a deliberate "reset" pause
+      // instead of an instant bounce-back right after being hit
+      boss.stateT+=dt; boss.x=GX+GW*0.5; boss.y=boss.fleeToY+Math.sin(boss.stateT*3)*8;
+      if(boss.stateT>=BOSS_HOVER_DUR){ boss.state='descend'; boss.stateT=0; }
     } else if(boss.state==='descend'){
       boss.stateT+=dt; const dur=0.7, t=Math.min(1,boss.stateT/dur), e=1-(1-t)*(1-t);
-      boss.alpha=0.4+0.6*e; boss.x=W*0.5; boss.y=boss.fleeToY+(boss.baseY-boss.fleeToY)*e;
-      if(t>=1){ boss.state='patrol'; boss.stateT=0; boss.alpha=1; boss.x=W*0.5; boss.y=boss.baseY;
+      boss.alpha=0.4+0.6*e; boss.x=GX+GW*0.5; boss.y=boss.fleeToY+(boss.baseY-boss.fleeToY)*e;
+      if(t>=1){ boss.state='patrol'; boss.stateT=0; boss.alpha=1; boss.x=GX+GW*0.5; boss.y=boss.baseY;
         boss.dir=Math.random()<0.5?-1:1; boss.iframe=0.3; boss.throwCooldown=1.6; boss.telegraph=0; }
     }
     if(boss.iframe>0) boss.iframe-=dt;
@@ -680,8 +713,8 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
 
   // invincibility star: spawns on a random timer, grants brief no-damage/defeat-freely status
   // and swaps in a dedicated BGM loop for its duration
-  if(powerStars.length===0 && invincible<=0 && elapsed>=nextStarAt){
-    powerStars.push({ x:60+Math.random()*(W-120), y:90+Math.random()*(worldH*0.55), t:0, life:12 });
+  if(powerStars.length===0 && invincible<=0 && elapsed>=nextStarAt && !(mode==='stage' && stageNum===3)){
+    powerStars.push({ x:GX+60+Math.random()*(GW-120), y:90+Math.random()*(worldH*0.55), t:0, life:12 });
   }
   for(let i=powerStars.length-1;i>=0;i--){ const s=powerStars[i]; s.t+=dt; s.life-=dt;
     if(Math.hypot(L.x-s.x, hcy-s.y) < hitR+20){
@@ -701,7 +734,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     o.vy+=P.grav*0.7*dt; o.vy-=o.vy*0.8*dt; o.vx-=o.vx*1.4*dt;
     o.x+=o.vx*dt; o.y+=o.vy*dt;
     const lg=worldH-52; if(o.y>lg){o.y=lg; o.vy*=-0.35; o.vx*=0.6;}
-    if(o.x<20)o.x=20; if(o.x>W-20)o.x=W-20;
+    if(o.x<GX+20)o.x=GX+20; if(o.x>GX+GW-20)o.x=GX+GW-20;
     if(o.arm<=0 && Math.hypot(L.x-o.x,hcy-o.y) < hitR+16){ tail.push({color:o.color,golden:o.golden}); loose.splice(i,1); addPuff(o.x,o.y,o.color); SFX.recollect(); continue; }
     if(o.life<=0){ loose.splice(i,1); }
   }
@@ -739,6 +772,13 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     }
   }
 
+  // stage advance: hangs back until the whole delivery has landed, then holds a quiet beat
+  // before the next stage actually reveals itself (camera snap, new enemies, boss, etc.)
+  if(pendingAdvance && delivering.length===0){
+    if(advanceTimer<0) advanceTimer=ADVANCE_PAUSE;
+    else { advanceTimer-=dt; if(advanceTimer<=0) runStageAdvance(); }
+  }
+
   // mode progress / end conditions
   elapsed+=dt;
   if(mode==='time'){
@@ -747,7 +787,10 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     if(csec!==countdownSec){ countdownSec=csec; countdownPulse=0; } else countdownPulse+=dt;
     if(timeLeft<=0) finishGame();
   }
-  else if(mode==='stage' && bossPhase==='defeated' && delivering.length===0) finishGame();
+  else if(mode==='stage' && bossPhase==='defeated' && delivering.length===0){
+    if(!pendingFinish){ pendingFinish=true; finishTimer=ADVANCE_PAUSE; }
+    else { finishTimer-=dt; if(finishTimer<=0) finishGame(); }
+  }
 
   // floating score popups
   for(let i=popups.length-1;i>=0;i--){ const p=popups[i]; p.life-=dt; p.y+=p.vy*dt; p.vy*=Math.max(0,1-dt*1.5);
