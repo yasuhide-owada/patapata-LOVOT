@@ -31,6 +31,8 @@
     text-shadow:0 1px 0 rgba(255,255,255,.6); }
   #hud .modeStat { margin-top:4px; font-size:15px; font-weight:800; color:var(--coral-dk);
     text-shadow:0 1px 0 rgba(255,255,255,.6); }
+  #hud .starBadge { margin-top:4px; font-size:15px; font-weight:800; color:#e0a53f;
+    text-shadow:0 1px 0 rgba(255,255,255,.6); }
 
   #hint { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:5;
     color:var(--cream); opacity:.9; font-size:12.5px; font-weight:600; text-align:center; line-height:1.7;
@@ -60,13 +62,20 @@
   .row input[type=range]::-moz-range-thumb{ width:20px; height:20px; border:none; border-radius:50%; background:var(--gold); }
   .note { font-size:11.5px; opacity:.55; line-height:1.5; margin-top:2px; }
 
-  #title, #result { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center;
+  #title, #result, #confirm { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center;
     padding:24px; background:rgba(20,17,22,.38); backdrop-filter:blur(2px); }
-  #title.hidden, #result.hidden { display:none; }
-  #title .card, #result .card { width:min(340px, 100%); background:var(--panel-bg); border:1px solid rgba(255,210,180,.16);
+  #title.hidden, #result.hidden, #confirm.hidden { display:none; }
+  #title .card, #result .card, #confirm .card { width:min(340px, 100%); background:var(--panel-bg); border:1px solid rgba(255,210,180,.16);
     border-radius:22px; padding:26px 24px 24px; color:var(--cream); box-shadow:0 20px 60px rgba(0,0,0,.45);
     text-align:center; }
-  #title h1, #result h1 { font-size:22px; font-weight:800; color:var(--gold); letter-spacing:.02em; margin-bottom:4px; }
+  #title h1, #result h1, #confirm h1 { font-size:22px; font-weight:800; color:var(--gold); letter-spacing:.02em; margin-bottom:4px; }
+  #confirm .msg { font-size:14px; opacity:.8; margin:10px 0 20px; }
+  #confirm .row { display:flex; gap:10px; margin-bottom:0; }
+  #confirm button { flex:1; height:48px; border:none; border-radius:999px; font-size:14.5px; font-weight:800;
+    letter-spacing:.02em; cursor:pointer; }
+  #confirm #c_toTitle { color:#fff; background:linear-gradient(135deg, var(--coral), var(--coral-dk));
+    box-shadow:0 8px 22px rgba(225,79,112,.5); }
+  #confirm #c_resume { color:var(--cream); background:rgba(255,255,255,.12); }
   #title .sub { font-size:12px; opacity:.65; margin-bottom:18px; }
   #title .howto { text-align:left; font-size:13.5px; line-height:1.85; background:rgba(0,0,0,.18);
     border-radius:14px; padding:14px 16px; margin-bottom:16px; }
@@ -82,6 +91,7 @@
   #title .modeBtn .modeDesc { display:block; font-size:11.5px; opacity:.85; margin-top:2px; }
   #title .modeBtn.alt { background:linear-gradient(135deg,#7ecbe0,#4a9fc0); box-shadow:0 6px 16px rgba(74,159,192,.4); }
   #title .modeBtn.alt2 { background:linear-gradient(135deg,var(--gold),#e0a53f); box-shadow:0 6px 16px rgba(224,165,63,.4); }
+  #title .modeBtn.sel { outline:3px solid var(--cream); outline-offset:2px; transform:scale(1.035); }
   #result .stats { display:flex; justify-content:space-around; margin:18px 0 14px; }
   #result .stat span { display:block; font-size:26px; font-weight:800; color:var(--gold); }
   #result .stat small { display:block; font-size:11px; opacity:.65; margin-top:2px; }
@@ -107,7 +117,8 @@
       ・左右をタップしてパタパタ羽ばたこう<br>
       ・ちびラボットを上から踏んで仲間にしよう<br>
       ・巣まで連れて帰って納品！<br>
-      ・横からぶつかると仲間が散らばっちゃうので注意
+      ・横からぶつかると仲間が散らばっちゃうので注意<br>
+      ・ゲームパッド接続時は十字キー左右で傾き、Aボタンで羽ばたき(タイトルでは上下で選択、Aで決定)
       <div class="tease">💡 一度にたくさんのちびラボットを集めて巣に返すとボーナス…!?</div>
     </div>
     <div class="modes">
@@ -139,10 +150,22 @@
   </div>
 </div>
 
+<div id="confirm" class="hidden">
+  <div class="card">
+    <h1>タイトルに戻る？</h1>
+    <div class="msg">今のプレイ内容は失われます</div>
+    <div class="row">
+      <button id="c_resume">つづける</button>
+      <button id="c_toTitle">タイトルへ戻る</button>
+    </div>
+  </div>
+</div>
+
 <div id="hud">
   <div class="score"><span id="score">0</span> <small>スコア</small></div>
   <div class="carry" id="carry">抱えてる: 0</div>
   <div class="modeStat" id="modeStat"></div>
+  <div class="starBadge" id="starBadge"></div>
 </div>
 <div id="hint">左タップ＝左の手 / 右タップ＝右の手 / 両方で上昇<br>上から踏んで仲間に → 巣に連れ帰って納品 / 横からぶつかると散らばる</div>
 
@@ -183,9 +206,12 @@ const TIME_LIMIT=60;
 // the third replaces the quota with a multi-hit boss (see spawnBoss/defeatBoss below).
 const STAGE_TARGETS=[8,14], STAGE_SPIKE=[0,0.25,0.4], STAGE_SPEED=[0.85,1,1.2];
 const BOSS_HITS=5, BOSS_REWARD=10;
+const ENEMY_SPAWN_GRACE=3; // seconds a freshly (re)spawned mini is see-through and can't be touched
+const INVINCIBLE_DUR=8, STAR_MIN=15, STAR_MAX=25; // invincibility star: duration, and its spawn-interval range
 let mode='practice', phase='title', elapsed=0, timeLeft=TIME_LIMIT;
 let countdownSec=null, countdownPulse=0;
 let stageNum=1, boss=null, bossPhase='none'; // bossPhase: 'none' | 'fighting' | 'defeated'
+let invincible=0, nextStarAt=0; // invincibility star: seconds left / elapsed-time of the next spawn
 // from stage 2 onward the world grows to 2 screens tall and the camera scrolls up to follow —
 // a surprise reveal of new sky/enemies above what used to be a hard ceiling
 let worldH=0, camY=0;
@@ -197,12 +223,41 @@ function updateWorldHeight(){
   nest.x=W*0.5; nest.y=worldH-58;
   camY=Math.min(camY, Math.max(0,worldH-H));
   if(tallWorld() && !wasTall){
+    // stage 2 starts grounded, not floating in empty upper sky: snap the camera and the lovot
+    // to the new ground level so the reveal reads as "there's more world up there" (discovered
+    // by flying up) rather than a disorienting mid-air teleport into nothing
+    camY=worldH-H;
+    L.x=nest.x; L.y=nest.y-120; L.vx=0; L.vy=0; hist.length=0;
     stars.length=0;
     for(let i=0;i<50;i++) stars.push({x:Math.random()*W, y:Math.random()*(worldH*0.6), s:1+Math.random()*2, ph:Math.random()*10});
     for(let i=0;i<4;i++) clouds.push({x:Math.random()*W, y:Math.random()*(worldH*0.55), s:.5+Math.random()*.9, sp:5+Math.random()*8});
+    // a few minis peeking in just above the old ceiling line — visibly cut off at the top edge
+    // of the screen from ground level, the "huh, what's up there?" hook to go investigate
+    for(let i=0;i<5;i++){ const side=Math.random()<0.5?-1:1;
+      enemies.push({ x: side<0? 40: W-40, y: (worldH-H)-10-Math.random()*50,
+        vx: side*(24+Math.random()*26), vy:0, bob:Math.random()*7, r:17,
+        color:palette[(Math.random()*palette.length)|0], golden:false, kind:'normal', t:Math.random()*10,
+        grace:ENEMY_SPAWN_GRACE }); }
+    // and a proper population spread through the newly revealed upper screen, so both screens
+    // feel busy right away instead of slowly trickling in via one-for-one respawns — kept well
+    // clear of the world's hard ceiling so there's always room to stomp them from above
+    for(let i=0;i<8;i++){ const side=Math.random()<0.5?-1:1, golden=Math.random()<0.08;
+      enemies.push({ x: side<0? 40: W-40, y: 150+Math.random()*((worldH-H)-200),
+        vx: side*(24+Math.random()*26), vy:0, bob:Math.random()*7, r:17,
+        color: golden?'#ffd700':palette[(Math.random()*palette.length)|0], golden, kind:Math.random()<0.25?'spike':'normal',
+        t:Math.random()*10, grace:ENEMY_SPAWN_GRACE });
+      if(golden) SFX.shine(); }
+    // and a population around ground level too — the player lands right back at the nest for
+    // stage 2, so the screen they're actually looking at needs company, not just the reveal above
+    for(let i=0;i<6;i++){ const side=Math.random()<0.5?-1:1, golden=Math.random()<0.08;
+      enemies.push({ x: side<0? 40: W-40, y: (worldH-H)+120+Math.random()*(H-240),
+        vx: side*(24+Math.random()*26), vy:0, bob:Math.random()*7, r:17,
+        color: golden?'#ffd700':palette[(Math.random()*palette.length)|0], golden, kind:Math.random()<0.25?'spike':'normal',
+        t:Math.random()*10, grace:ENEMY_SPAWN_GRACE });
+      if(golden) SFX.shine(); }
   }
 }
-const enemies=[], tail=[], loose=[], puffs=[], hist=[], delivering=[], popups=[];
+const enemies=[], tail=[], loose=[], puffs=[], hist=[], delivering=[], popups=[], powerStars=[];
 function easeOutBack(x){ const c1=1.70158, c3=c1+1; return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2); }
 const SP=7;               // history frames between followers
 const R=30;               // lovot body radius
@@ -263,14 +318,16 @@ const SFX=(()=>{
     sparkle:  ()=>{ tone(null,1046,0.1,'sine',0.12); tone(null,1318,0.1,'sine',0.12,null,0.07);
       tone(null,1568,0.14,'sine',0.13,null,0.14); tone(null,2093,0.18,'sine',0.12,null,0.21); },
     shine:    ()=>{ tone(null,1568,0.12,'sine',0.14); tone(null,2093,0.16,'sine',0.13,null,0.09); },
+    power:    ()=>{ tone(null,660,0.1,'square',0.14); tone(null,880,0.1,'square',0.14,null,0.08);
+      tone(null,1320,0.22,'square',0.16,null,0.16); },
   };
   // voice-tracked file cues (retriggered rapidly, same as their synth counterparts above) vs.
-  // one-shot layered cues (deliver/miss/sparkle/shine) that are fine to overlap.
+  // one-shot layered cues (deliver/miss/sparkle/shine/power) that are fine to overlap.
   const VOICED=new Set(['flap','befriend','recollect','hit','pop']);
   const files={ flap:'assets/sounds/flap.mp3', befriend:'assets/sounds/befriend.wav',
     recollect:'assets/sounds/recollect.mp3', hit:'assets/sounds/hit.wav', deliver:'assets/sounds/deliver.wav',
     pop:'assets/sounds/風船割れる.mp3', miss:'assets/sounds/one_miss.wav', sparkle:'assets/sounds/きらきら輝く3.mp3',
-    shine:'assets/sounds/可愛く輝く1.mp3' };
+    shine:'assets/sounds/可愛く輝く1.mp3', power:'assets/sounds/star.mp3' };
   // decode every file up front into an AudioBuffer: playback is then a plain AudioBufferSourceNode
   // (sample-accurate, no per-play seek/decode latency) instead of re-seeking a shared <audio>
   // element, which could fall behind under rapid retriggers (e.g. recollect firing every 0.1s
@@ -309,6 +366,7 @@ const BGM=(()=>{
   let muted=localStorage.getItem('lovot_bgm_muted')==='1', started=false;
   const el=new Audio(); el.volume=0.35; el.src=order[idx];
   el.addEventListener('ended',()=>{
+    if(overrideActive) return; // looping override track never fires 'ended'; guard anyway
     idx++; if(idx>=order.length){ order=shuffle(TRACKS); idx=0; }
     el.src=order[idx]; if(!muted) el.play().catch(()=>{});
   });
@@ -321,7 +379,33 @@ const BGM=(()=>{
     refreshBtn();
   });
   refreshBtn();
-  return { start };
+  // temporary track swap (e.g. the invincibility-star jingle): loops on its own track until the
+  // caller explicitly ends it, then resumes the shuffled playlist from where it left off.
+  let overrideActive=false, savedSrc=null, savedTime=0;
+  function playOverride(src){
+    if(overrideActive) return;
+    overrideActive=true; savedSrc=el.src; savedTime=el.currentTime;
+    el.loop=true; el.src=src; el.currentTime=0;
+    if(!muted && started) el.play().catch(()=>{});
+  }
+  function endOverride(){
+    if(!overrideActive) return;
+    overrideActive=false; el.loop=false;
+    el.src=savedSrc; el.currentTime=savedTime;
+    if(!muted && started) el.play().catch(()=>{});
+  }
+  return { start, playOverride, endOverride };
+})();
+
+// ---------- star ambient ----------
+// a looping cue that plays for as long as an uncollected invincibility star is sitting on the
+// field (separate from BGM.playOverride, which only kicks in once the star is actually picked up).
+const StarAmbient=(()=>{
+  const el=new Audio('assets/sounds/Onoma-Sparkle11-1(Mid).mp3'); el.loop=true; el.volume=0.5;
+  let playing=false;
+  function set(active){ if(active===playing) return; playing=active;
+    if(active) el.play().catch(()=>{}); else { el.pause(); el.currentTime=0; } }
+  return { set };
 })();
 
 function resetAll(){ L.x=W*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.iframe=0;
@@ -329,6 +413,8 @@ function resetAll(){ L.x=W*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.ifra
   delivering.length=0; popups.length=0; elapsed=0; timeLeft=TIME_LIMIT;
   countdownSec=null; countdownPulse=0;
   stageNum=1; boss=null; bossPhase='none'; camY=0;
+  powerStars.length=0; invincible=0; nextStarAt=STAR_MIN+Math.random()*(STAR_MAX-STAR_MIN);
+  BGM.endOverride(); StarAmbient.set(false);
   updateWorldHeight();
   for(let i=0;i<5;i++) spawnEnemy(); }
 function respawnLovot(){ L.x=nest.x; L.y=nest.y-120; L.vx=0; L.vy=0; L.balloons=2; L.iframe=1.6; hist.length=0; }
@@ -342,14 +428,15 @@ function spawnEnemy(){
   const kind=Math.random()<spikeChance?'spike':'normal';
   enemies.push({ x: side<0? 40: W-40, y: 90+Math.random()*(worldH*0.55),
     vx: side*(24+Math.random()*26)*speedMul, vy:0, bob:Math.random()*7, r:17,
-    color: golden?'#ffd700':palette[(Math.random()*palette.length)|0], golden, kind, t:Math.random()*10 });
+    color: golden?'#ffd700':palette[(Math.random()*palette.length)|0], golden, kind, t:Math.random()*10,
+    grace:ENEMY_SPAWN_GRACE });
   if(golden) SFX.shine();
 }
 
 // ---------- input ----------
 const pointers=new Map(); let keyL=false,keyR=false, holdL=false,holdR=false, tL=0,tR=0, hinted=false;
 function sideOf(x){ return x<innerWidth/2?'L':'R'; }
-function recompute(){ const s=new Set(pointers.values()); holdL=s.has('L')||keyL; holdR=s.has('R')||keyR; }
+function recompute(){ const s=new Set(pointers.values()); holdL=s.has('L')||keyL||gpHoldL; holdR=s.has('R')||keyR||gpHoldR; }
 function fadeHint(){ if(!hinted){ hinted=true; document.getElementById('hint').style.opacity=0; } }
 function flap(side){ const f=P.flap*(L.balloons>=2?1:0.82); L.wing=0.13; SPR.upTimer=0.12; SFX.flap();
   if(side==='L'){ L.vy-=f; L.vx-=P.side; L.flapPulseL=1; } else { L.vy-=f; L.vx+=P.side; L.flapPulseR=1; } }
@@ -361,7 +448,53 @@ stage.addEventListener('pointerdown',e=>{ const wl=[...pointers.values()].includ
   const s=sideOf(e.clientX); pointers.set(e.pointerId,s); recompute(); fadeHint();
   if(s==='L'&&!wl)press('L'); if(s==='R'&&!wr)press('R'); });
 function up(e){ if(pointers.has(e.pointerId)){ pointers.delete(e.pointerId); recompute(); } }
-stage.addEventListener('pointerup',up); stage.addEventListener('pointercancel',up);
+stage.addEventListener('pointerup',up); stage.addEventListener('pointercancel',up); stage.addEventListener('pointerleave',up);
+// safety net: on mobile a system gesture (control center, notification shade, edge-back swipe…)
+// can steal a touch without ever firing pointerup/pointercancel, leaving it stuck "held" forever
+// and auto-flapping non-stop with no way to stop it — so drop all held input whenever the page
+// loses focus or visibility, not just when we get a clean pointer-release event.
+function clearInput(){ pointers.clear(); keyL=false; keyR=false; gpHoldL=false; gpHoldR=false; recompute(); }
+addEventListener('blur', clearInput);
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) clearInput(); });
+
+// ---------- gamepad ----------
+// D-pad left/right steers which wing flaps (a "lean"), the A button (face button 0) is the
+// flap trigger — held with no lean it flaps both wings alternately, same as holding both
+// touch sides at once. The Gamepad API has no press events, so state is polled every tick().
+let gpIndex=null, gpHoldL=false, gpHoldR=false, gpPrevA=false, gpPrevUp=false, gpPrevDown=false;
+addEventListener('gamepadconnected', e=>{ gpIndex=e.gamepad.index; });
+addEventListener('gamepaddisconnected', e=>{
+  if(gpIndex===e.gamepad.index){ gpIndex=null; gpHoldL=false; gpHoldR=false; recompute(); } });
+function pollGamepad(){
+  if(gpIndex===null || !navigator.getGamepads) return;
+  const pad=navigator.getGamepads()[gpIndex];
+  if(!pad) return;
+  const up=!!(pad.buttons[12] && pad.buttons[12].pressed);
+  const down=!!(pad.buttons[13] && pad.buttons[13].pressed);
+  const axisX=pad.axes[0]||0, STICK_DEAD=0.35; // left stick horizontal, same lean as the D-pad
+  const dpadL=!!(pad.buttons[14] && pad.buttons[14].pressed) || axisX<-STICK_DEAD;
+  const dpadR=!!(pad.buttons[15] && pad.buttons[15].pressed) || axisX>STICK_DEAD;
+  const aBtn=!!(pad.buttons[0] && pad.buttons[0].pressed);
+
+  // title screen: D-pad up/down cycles the highlighted mode, A confirms it — same rising-edge
+  // pattern as the flap trigger below so holding a direction doesn't rapid-scroll the menu
+  if(phase==='title'){
+    if(up && !gpPrevUp){ titleSel=(titleSel-1+modeBtns.length)%modeBtns.length; updateTitleSel(); }
+    if(down && !gpPrevDown){ titleSel=(titleSel+1)%modeBtns.length; updateTitleSel(); }
+    if(aBtn && !gpPrevA){ modeBtns[titleSel].click(); }
+    gpPrevUp=up; gpPrevDown=down; gpPrevA=aBtn;
+    return;
+  }
+  gpPrevUp=up; gpPrevDown=down;
+  if(phase!=='playing'){ gpPrevA=aBtn; return; }
+
+  const neutral=!dpadL && !dpadR;
+  const newHoldL=aBtn && (dpadL || neutral), newHoldR=aBtn && (dpadR || neutral);
+  if(newHoldL!==gpHoldL || newHoldR!==gpHoldR){ gpHoldL=newHoldL; gpHoldR=newHoldR; recompute(); }
+  if(aBtn && !gpPrevA){ fadeHint();
+    if(dpadL) press('L'); else if(dpadR) press('R'); else { press('L'); press('R'); } }
+  gpPrevA=aBtn;
+}
 addEventListener('keydown',e=>{ if(e.repeat)return;
   if(e.key==='ArrowLeft'||e.key==='a'){ if(!keyL){keyL=true;recompute();press('L');fadeHint();} }
   if(e.key==='ArrowRight'||e.key==='d'){ if(!keyR){keyR=true;recompute();press('R');fadeHint();} }
@@ -393,7 +526,7 @@ function tailPos(i){ const idx=Math.min((i+1)*SP, hist.length-1); return hist[id
 // ---------- stage-clear boss (stage 3) ----------
 function announceStage(title,sub){
   popups.push({x:W*0.5,y:camY+H*0.28,text:title,text2:sub,color:'#ffd27a',color2:'#fff3da',
-    size:28,size2:15,life:2.0,life0:2.0,vy:-10,bounce:true});
+    size:28,size2:15,life:3.5,life0:3.5,vy:-10,bounce:true});
   SFX.shine();
 }
 function spawnBoss(){
@@ -402,6 +535,7 @@ function spawnBoss(){
   boss={ x:W*0.5, y:baseY, baseY, dir:Math.random()<0.5?-1:1, r:54, hp:BOSS_HITS, maxHp:BOSS_HITS,
     iframe:0, flash:0, t:Math.random()*10, color:palette[(Math.random()*palette.length)|0] };
   bossPhase='fighting';
+  BGM.playOverride('assets/sounds/bgm/BOSS_BATTLE.mp3');
 }
 function defeatBoss(){
   const bx=boss.x, by=boss.y, n=BOSS_REWARD;
@@ -413,16 +547,18 @@ function defeatBoss(){
   popups.push({x:bx,y:by-boss.r-24,text:'ボス撃破！',color:'#ff9db0',size:32,life:1.4,life0:1.4,vy:-30,bounce:true});
   SFX.deliver();
   boss=null; bossPhase='defeated';
+  BGM.endOverride();
 }
 function checkStageAdvance(){
   if(mode!=='stage') return;
-  if(stageNum===1 && banked>=STAGE_TARGETS[0]){ stageNum=2; updateWorldHeight(); announceStage('ステージ2 とうじょう！','上にも世界が広がっている…？'); }
+  if(stageNum===1 && banked>=STAGE_TARGETS[0]){ stageNum=2; updateWorldHeight(); announceStage('ステージ2 とうじょう！', STAGE_TARGETS[1]+'体のミニを帰巣させよう'); }
   else if(stageNum===2 && banked>=STAGE_TARGETS[0]+STAGE_TARGETS[1]){ stageNum=3; announceStage('ボス とうじょう！','たくさん踏みつけて倒そう！'); spawnBoss(); }
 }
 
 // ---------- loop ----------
 let last=performance.now();
 function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
+  pollGamepad();
   if(phase!=='playing'){ draw(); requestAnimationFrame(tick); return; }
 
   if(holdL){ tL+=dt*1000; if(tL>=P.interval){ flap('L'); tL-=P.interval; } }
@@ -450,7 +586,8 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   // enemies
   for(const e of enemies){ e.t+=dt; e.x+=e.vx*dt; e.y+=Math.sin(e.t*1.3+e.bob)*10*dt*3;
     if(e.x<30){e.x=30;e.vx*=-1;} if(e.x>W-30){e.x=W-30;e.vx*=-1;}
-    if(e.y<80)e.y=80; if(e.y>worldH-100)e.y=worldH-100; }
+    if(e.y<150)e.y=150; if(e.y>worldH-100)e.y=worldH-100; // 150, not 80: leaves room above to stomp from
+    if(e.grace>0) e.grace=Math.max(0,e.grace-dt); }
 
   // boss (stage 3): slow side-to-side patrol with a gentle bob
   if(boss){ boss.t+=dt; boss.x+=boss.dir*46*dt;
@@ -464,8 +601,10 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   // touching a spiky side scatters/damages, touching a safe side befriends it.
   const hcy=L.y+HITCY, hitR=R*P.hit;
   if(L.iframe<=0){
-    for(const e of enemies){ const dx=L.x-e.x, dy0=hcy-e.y; const d=Math.hypot(dx,dy0);
+    for(const e of enemies){ if(e.grace>0) continue;
+      const dx=L.x-e.x, dy0=hcy-e.y; const d=Math.hypot(dx,dy0);
       if(d < hitR+e.r){
+        if(invincible>0){ befriend(e); break; } // star powerup: any angle defeats (befriends) safely
         const dy=dy0-e.r*0.3; // bias so a near-top approach still reads as "top" (keeps stomps forgiving)
         const dir=Math.abs(dy)>Math.abs(dx) ? (dy<0?'top':'bottom') : (dx<0?'left':'right');
         const safe=ENEMY_KINDS[e.kind||'normal'].safe;
@@ -480,7 +619,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     if(d < hitR+boss.r){
       const dy=dy0-boss.r*0.3;
       const dir=Math.abs(dy)>Math.abs(dx) ? (dy<0?'top':'bottom') : (dx<0?'left':'right');
-      if(dir==='top'){
+      if(dir==='top' || invincible>0){ // star powerup: the boss can be hit from any angle too
         if(boss.iframe<=0){
           boss.hp--; boss.iframe=0.45; boss.flash=1; L.vy=-320; L.squash=0.5;
           addPuff(boss.x,boss.y-boss.r*0.4,boss.color); SFX.hit();
@@ -490,6 +629,23 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
       } else { if(tail.length>0) scatterTail(); else loseBalloon(); }
     }
   }
+
+  // invincibility star: spawns on a random timer, grants brief no-damage/defeat-freely status
+  // and swaps in a dedicated BGM loop for its duration
+  if(powerStars.length===0 && invincible<=0 && elapsed>=nextStarAt){
+    powerStars.push({ x:60+Math.random()*(W-120), y:90+Math.random()*(worldH*0.55), t:0, life:12 });
+  }
+  for(let i=powerStars.length-1;i>=0;i--){ const s=powerStars[i]; s.t+=dt; s.life-=dt;
+    if(Math.hypot(L.x-s.x, hcy-s.y) < hitR+20){
+      powerStars.splice(i,1); invincible=INVINCIBLE_DUR;
+      addPuff(s.x,s.y,'#fff6c8'); SFX.power(); BGM.playOverride('assets/sounds/bgm/Star Collecting Loop.mp3');
+      continue;
+    }
+    if(s.life<=0){ powerStars.splice(i,1); nextStarAt=elapsed+STAR_MIN+Math.random()*(STAR_MAX-STAR_MIN); }
+  }
+  if(invincible>0){ invincible=Math.max(0,invincible-dt);
+    if(invincible<=0){ BGM.endOverride(); nextStarAt=elapsed+STAR_MIN+Math.random()*(STAR_MAX-STAR_MIN); } }
+  StarAmbient.set(powerStars.length>0);
 
   // loose (scattered) update + recollect
   for(let i=loose.length-1;i>=0;i--){ const o=loose[i];
@@ -566,6 +722,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   document.getElementById('score').textContent=score;
   document.getElementById('carry').textContent='抱えてる: '+tail.length;
   updateModeStat();
+  document.getElementById('starBadge').textContent = invincible>0 ? '⭐ 無敵 '+Math.ceil(invincible)+'s' : '';
 
   draw();
   requestAnimationFrame(tick);
@@ -642,8 +799,15 @@ function draw(){
 
   drawNest();
   for(const o of loose){ const blink = o.life<1.5 && (Math.floor(o.life*8)%2===0); if(!blink) miniLovot(o.x,o.y,0.78,o.color,'sad',o.golden); }
-  for(const e of enemies) miniLovot(e.x,e.y,0.82,e.color,'idle',e.golden,ENEMY_KINDS[e.kind||'normal'].spikes);
+  for(const e of enemies){
+    const spikes=ENEMY_KINDS[e.kind||'normal'].spikes;
+    if(e.grace>0){ const blink=Math.floor(e.grace*20)%2===0;
+      ctx.save(); ctx.globalAlpha=blink?0.28:1;
+      miniLovot(e.x,e.y,0.82,e.color,'idle',e.golden,spikes); ctx.restore(); }
+    else miniLovot(e.x,e.y,0.82,e.color,'idle',e.golden,spikes);
+  }
   if(boss) drawBoss();
+  for(const s of powerStars) drawPowerStar(s);
   // tail followers (far first)
   for(let i=tail.length-1;i>=0;i--){ const p=tailPos(i); miniLovot(p.x,p.y,0.7,tail[i].color,'happy',tail[i].golden); }
   for(const d of delivering) miniLovot(d.x,d.y,0.7-d.prog*0.3,d.color,'happy',d.golden);
@@ -807,11 +971,39 @@ function drawBoss(){
     ctx.beginPath(); ctx.arc(startX+i*(pipW+gap)+pipW/2, py, pipW/2, 0, 7); ctx.fill(); ctx.stroke();
   }
 }
+function drawStarShape(cx,cy,rOuter,rInner,c1,c2){
+  const g=ctx.createRadialGradient(cx-4,cy-6,2,cx,cy,rOuter);
+  g.addColorStop(0,'#fff8e0'); g.addColorStop(0.45,c1); g.addColorStop(1,c2);
+  ctx.fillStyle=g; ctx.strokeStyle='rgba(120,90,20,.35)'; ctx.lineWidth=1.5;
+  ctx.beginPath();
+  for(let i=0;i<10;i++){ const ang=-Math.PI/2+i*Math.PI/5, r=i%2===0?rOuter:rInner;
+    const x=cx+Math.cos(ang)*r, y=cy+Math.sin(ang)*r;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+}
+function drawPowerStar(s){
+  // the invincibility pickup: a soft pulsing glow behind a gently rotating star, so it reads as
+  // "special" against the mostly-round mini/balloon silhouettes elsewhere on screen
+  const bob=Math.sin(L.bob*2+s.t*2)*4, pulse=0.5+0.5*Math.sin(L.bob*3+s.t);
+  ctx.save(); ctx.translate(s.x, s.y+bob);
+  const og=ctx.createRadialGradient(0,0,4,0,0,34+pulse*8);
+  og.addColorStop(0,`rgba(255,240,150,${0.5+pulse*0.3})`); og.addColorStop(1,'rgba(255,240,150,0)');
+  ctx.fillStyle=og; ctx.beginPath(); ctx.arc(0,0,34+pulse*8,0,7); ctx.fill();
+  ctx.rotate(Math.sin(L.bob*0.6+s.t*0.3)*0.25);
+  drawStarShape(0,0,17,7,'#ffe27a','#ffbf4d');
+  ctx.restore();
+}
 function shade(h){ const r=Math.max(0,parseInt(h.slice(1,3),16)-40),g=Math.max(0,parseInt(h.slice(3,5),16)-40),b=Math.max(0,parseInt(h.slice(5,7),16)-40); return `rgb(${r},${g},${b})`; }
 
 function drawLovot(){
   const blink = L.iframe>0 && (Math.floor(L.iframe*10)%2===0);
   ctx.save(); ctx.translate(L.x, L.y+Math.sin(L.bob)*3); ctx.rotate(L.tilt*0.5);
+  if(invincible>0){ // starpower aura, drawn at full opacity even if a damage-blink is also active
+    const pulse=0.5+0.5*Math.sin(L.bob*4);
+    ctx.save(); const og=ctx.createRadialGradient(0,0,R*0.6,0,0,R*2.4);
+    og.addColorStop(0,`rgba(255,225,130,${0.35+pulse*0.3})`); og.addColorStop(1,'rgba(255,225,130,0)');
+    ctx.fillStyle=og; ctx.beginPath(); ctx.arc(0,0,R*2.4,0,7); ctx.fill(); ctx.restore();
+  }
   ctx.scale(1+L.squash*0.18, 1-L.squash*0.18); if(blink) ctx.globalAlpha=0.45;
   const sway=Math.sin(L.bob*0.9)*6 - L.vx*0.03;
   if(L.balloons>=1) balloon(-16+sway*0.4,-R-64,'#ff9db0','#ff7d97');
@@ -838,7 +1030,10 @@ function balloon(bx,by,c1,c2){ ctx.strokeStyle='rgba(120,120,130,.5)'; ctx.lineW
 // ---------- panel ----------
 const gear=document.getElementById('gear'), panel=document.getElementById('panel');
 gear.addEventListener('click',()=>panel.classList.toggle('open'));
-document.getElementById('reset').addEventListener('click',resetAll);
+document.getElementById('reset').addEventListener('click',()=>{
+  if(phase==='playing'){ phase='paused'; document.getElementById('confirm').classList.remove('hidden'); }
+  else { clearInput(); resetAll(); }
+});
 function bind(id,key,fmt){ const s=document.getElementById('s_'+id),v=document.getElementById('v_'+id);
   s.value=P[key]; const show=()=>v.textContent=fmt(P[key]); show(); s.addEventListener('input',()=>{P[key]=parseFloat(s.value);show();}); }
 bind('float','float',x=>x.toFixed(2)); bind('grav','grav',x=>Math.round(x)); bind('flap','flap',x=>Math.round(x));
@@ -853,14 +1048,20 @@ function startGame(m){
   document.getElementById('result').classList.add('hidden');
   resetAll(); phase='playing'; started=true; BGM.start(); fadeHint();
   updateModeStat();
+  if(mode==='stage') announceStage('ステージ1 スタート！', STAGE_TARGETS[0]+'体のミニを帰巣させよう');
 }
 document.querySelectorAll('.modeBtn').forEach(btn=>{
   btn.addEventListener('click',()=>startGame(btn.dataset.mode));
 });
+const modeBtns=[...document.querySelectorAll('.modeBtn')];
+let titleSel=0;
+function updateTitleSel(){ modeBtns.forEach((b,i)=>b.classList.toggle('sel', i===titleSel)); }
+updateTitleSel();
 
 function finishGame(){
   if(phase!=='playing') return;
   phase='result';
+  StarAmbient.set(false); BGM.endOverride();
   const mm=Math.floor(elapsed/60), ss=Math.floor(elapsed%60);
   document.getElementById('r_score').textContent=score;
   document.getElementById('r_count').textContent=banked;
@@ -898,7 +1099,17 @@ document.getElementById('r_share').addEventListener('click',()=>{
 document.getElementById('r_retry').addEventListener('click',()=>startGame(mode));
 document.getElementById('r_toTitle').addEventListener('click',()=>{
   document.getElementById('result').classList.add('hidden');
-  phase='title'; started=false;
+  phase='title'; started=false; titleSel=0; updateTitleSel();
+  document.getElementById('title').classList.remove('hidden');
+});
+document.getElementById('c_resume').addEventListener('click',()=>{
+  document.getElementById('confirm').classList.add('hidden');
+  phase='playing';
+});
+document.getElementById('c_toTitle').addEventListener('click',()=>{
+  document.getElementById('confirm').classList.add('hidden');
+  clearInput();
+  phase='title'; started=false; titleSel=0; updateTitleSel();
   document.getElementById('title').classList.remove('hidden');
 });
 
