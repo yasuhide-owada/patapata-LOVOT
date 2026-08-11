@@ -544,9 +544,6 @@ function drawNest(){
 function hoodedLovot(cover, mood, horn, hornGlow, lookX, lookY){
   lookX=lookX||0; lookY=lookY||0;
   const dark=shade(cover);
-  // cream base peeking at bottom
-  ctx.fillStyle='#e7ddce';
-  ctx.beginPath(); ctx.ellipse(0,R*0.62,R*0.64,R*0.58,0,0,7); ctx.fill();
   // hooded cover (teardrop)
   ctx.fillStyle=cover;
   ctx.beginPath();
