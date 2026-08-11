@@ -24,9 +24,9 @@
 
   #hud { position:fixed; top:calc(env(safe-area-inset-top) + 12px); left:14px; z-index:10;
     color:#243; pointer-events:none; }
-  #hud .score { font-size:26px; font-weight:800; letter-spacing:.01em; line-height:1;
+  #hud .score { font-size:40px; font-weight:800; letter-spacing:.01em; line-height:1;
     color:var(--coral-dk); text-shadow:0 1px 0 rgba(255,255,255,.6); }
-  #hud .score small { font-size:13px; font-weight:700; opacity:.75; }
+  #hud .score small { font-size:15px; font-weight:700; opacity:.75; }
   #hud .carry { margin-top:6px; font-size:14px; font-weight:700; color:#c8863c;
     text-shadow:0 1px 0 rgba(255,255,255,.6); }
 
@@ -90,7 +90,7 @@
       ・ちびラボットを上から踏んで仲間にしよう<br>
       ・巣まで連れて帰って納品！<br>
       ・横からぶつかると仲間が散らばっちゃうので注意
-      <div class="tease">💡 一度にたくさんのちびラボットを集めて巣に返すとボーナス…!?(近日実装)</div>
+      <div class="tease">💡 一度にたくさんのちびラボットを集めて巣に返すとボーナス…!?</div>
     </div>
     <button id="start">あそぶ</button>
   </div>
@@ -138,7 +138,7 @@ const enemies=[], tail=[], loose=[], puffs=[], hist=[], delivering=[], popups=[]
 function easeOutBack(x){ const c1=1.70158, c3=c1+1; return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2); }
 const SP=7;               // history frames between followers
 const R=30;               // lovot body radius
-const palette=['#ff9db0','#ffd27a','#9ad0ff','#c3b0ff','#a6e3b0','#ffb0d8'];
+const palette=['#ff9db0','#9ad0ff','#c3b0ff','#a6e3b0','#ffb0d8']; // no yellow/gold — that's reserved for the rare golden mini
 const sprDN=new Image(); sprDN.src='assets/images/lovot-wing-down.png';
 const sprUP=new Image(); sprUP.src='assets/images/lovot-wing-up.png';
 const SPRW=231, SPRH=300, EYESI=[[86.4,110.9],[144.6,111.0]], EYERI=10.8;
@@ -148,6 +148,7 @@ const SOFFX=SDW/2-_emx*SPRSCALE, SOFFY=(-R*0.12)+SDH/2-_emy*SPRSCALE;
 const EYESL=[[-SDW/2+SOFFX+EYESI[0][0]*SPRSCALE,-SDH/2+SOFFY+EYESI[0][1]*SPRSCALE],
             [-SDW/2+SOFFX+EYESI[1][0]*SPRSCALE,-SDH/2+SOFFY+EYESI[1][1]*SPRSCALE]];
 const EYER=EYERI*SPRSCALE;
+const SPRTOPY=-SDH/2+SOFFY;   // how far the sprite's top (head/antenna) sits above the anchor (L.x,L.y)
 // SOFFY centers the hit-circle on the sprite's bounding-box middle, but LOVOT's silhouette is
 // bottom-heavy (small head, round belly) so that geometric center still reads as "too high" against
 // the art. Bias it further down toward the belly to match what's actually drawn.
@@ -184,10 +185,15 @@ const SFX=(()=>{
     hit:      ()=>tone('hit',220,0.22,'sawtooth',0.15,90),
     pop:      ()=>tone('pop',180,0.28,'sawtooth',0.18,40),
     deliver:  ()=>{ tone(null,520,0.12,'sine',0.15); tone(null,660,0.14,'sine',0.15,null,0.07); tone(null,880,0.18,'sine',0.15,null,0.14); },
+    miss:     ()=>{ tone(null,300,0.22,'triangle',0.18,140); tone(null,180,0.35,'triangle',0.18,90,0.18); },
+    sparkle:  ()=>{ tone(null,1046,0.1,'sine',0.12); tone(null,1318,0.1,'sine',0.12,null,0.07);
+      tone(null,1568,0.14,'sine',0.13,null,0.14); tone(null,2093,0.18,'sine',0.12,null,0.21); },
+    shine:    ()=>{ tone(null,1568,0.12,'sine',0.14); tone(null,2093,0.16,'sine',0.13,null,0.09); },
   };
-  const files={ flap:'assets/sounds/flap.mp3', befriend:'assets/sounds/befriend.mp3',
+  const files={ flap:'assets/sounds/flap.mp3', befriend:'assets/sounds/befriend.wav',
     recollect:'assets/sounds/recollect.mp3', hit:'assets/sounds/hit.wav', deliver:'assets/sounds/deliver.wav',
-    pop:'assets/sounds/風船割れる.mp3' };
+    pop:'assets/sounds/風船割れる.mp3', miss:'assets/sounds/one_miss.wav', sparkle:'assets/sounds/きらきら輝く3.mp3',
+    shine:'assets/sounds/可愛く輝く1.mp3' };
   const clip={};
   for(const name in files){ const el=new Audio(); el.volume=0.6; const c={el,found:true};
     el.addEventListener('error',()=>c.found=false,{once:true}); el.src=files[name]; clip[name]=c; }
@@ -225,9 +231,11 @@ function respawnLovot(){ L.x=nest.x; L.y=nest.y-120; L.vx=0; L.vy=0; L.balloons=
 
 function spawnEnemy(){
   const side=Math.random()<0.5?-1:1;
+  const golden=Math.random()<0.08;   // rare golden mini: sparkly, worth 10x when delivered
   enemies.push({ x: side<0? 40: W-40, y: 90+Math.random()*(H*0.55),
     vx: side*(24+Math.random()*26), vy:0, bob:Math.random()*7, r:17,
-    color: palette[(Math.random()*palette.length)|0], t:Math.random()*10 });
+    color: golden?'#ffd700':palette[(Math.random()*palette.length)|0], golden, t:Math.random()*10 });
+  if(golden) SFX.shine();
 }
 
 // ---------- input ----------
@@ -259,15 +267,19 @@ addEventListener('keyup',e=>{
 const clouds=[]; for(let i=0;i<6;i++) clouds.push({x:Math.random()*W,y:Math.random()*innerHeight*0.6,s:.5+Math.random()*.9,sp:5+Math.random()*8});
 
 function addPuff(x,y,c){ puffs.push({x,y,r:6,c,a:1}); }
-function befriend(e){ tail.push({color:e.color}); L.vy=-280; L.squash=0.5; addPuff(e.x,e.y,e.color); SFX.befriend();
+function befriend(e){ tail.push({color:e.color,golden:e.golden}); L.vy=-280; L.squash=0.5; addPuff(e.x,e.y,e.color); SFX.befriend();
   const i=enemies.indexOf(e); if(i>=0) enemies.splice(i,1); spawnEnemy(); }
 function scatterTail(){ // sonic-style: whole tail drops & scatters, recoverable
   for(let i=0;i<tail.length;i++){ const p=tailPos(i);
     loose.push({ x:p.x, y:p.y, vx:(Math.random()-0.5)*260, vy:-120-Math.random()*140,
-      color:tail[i].color, arm:0.45, life:6.5 }); }
+      color:tail[i].color, golden:tail[i].golden, arm:0.45, life:6.5 }); }
   tail.length=0; L.iframe=1.0; L.vy=-140; SFX.hit(); }
+const MISS_LINES=['うわーん！','わわっ！','きゃー！','あちゃー…','とほほ…','ぷしゅ〜'];
 function loseBalloon(){ L.balloons--; L.iframe=1.2; L.vy=-160; L.vx*=-0.4; SFX.pop();
-  if(L.balloons<=0){ addPuff(L.x,L.y,'#fff'); respawnLovot(); } }
+  if(L.balloons<=0){ addPuff(L.x,L.y,'#fff'); SFX.miss();
+    const line=MISS_LINES[(Math.random()*MISS_LINES.length)|0];
+    popups.push({x:L.x,y:L.y-50,text:line,color:'#9ad0ff',size:32,life:1.2,life0:1.2,vy:-38,bounce:true});
+    respawnLovot(); } }
 function tailPos(i){ const idx=Math.min((i+1)*SP, hist.length-1); return hist[idx]||{x:L.x,y:L.y}; }
 
 // ---------- loop ----------
@@ -284,7 +296,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   L.x+=L.vx*dt; L.y+=L.vy*dt;
   const m=40;
   if(L.x<m){L.x=m;L.vx*=-0.32;} if(L.x>W-m){L.x=W-m;L.vx*=-0.32;}
-  if(L.y<64){L.y=64; if(L.vy<0)L.vy*=-0.25;}
+  const ceil=-SPRTOPY+6; if(L.y<ceil){L.y=ceil; if(L.vy<0)L.vy*=-0.25;}
   const gnd=H-58; if(L.y>gnd){L.y=gnd; if(L.vy>0){L.squash=Math.min(1,L.vy/900);L.vy*=-0.14;}}
   if(L.iframe>0) L.iframe-=dt;
 
@@ -313,17 +325,18 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     o.x+=o.vx*dt; o.y+=o.vy*dt;
     const lg=H-52; if(o.y>lg){o.y=lg; o.vy*=-0.35; o.vx*=0.6;}
     if(o.x<20)o.x=20; if(o.x>W-20)o.x=W-20;
-    if(o.arm<=0 && Math.hypot(L.x-o.x,hcy-o.y) < hitR+16){ tail.push({color:o.color}); loose.splice(i,1); addPuff(o.x,o.y,o.color); SFX.recollect(); continue; }
+    if(o.arm<=0 && Math.hypot(L.x-o.x,hcy-o.y) < hitR+16){ tail.push({color:o.color,golden:o.golden}); loose.splice(i,1); addPuff(o.x,o.y,o.color); SFX.recollect(); continue; }
     if(o.life<=0){ loose.splice(i,1); }
   }
 
   // bank at nest: the flock peels off one by one and flies into the nest, each landing
-  // adding its place in line (1,2,3…) so the running total lands exactly on the triangular
-  // bonus (n*(n+1)/2) by the time the last one arrives
+  // adding its place in line (1,2,3…) so the running total lands on the triangular bonus
+  // by the time the last one arrives — golden minis are worth 10x their place in line
   if(tail.length>0 && Math.hypot(L.x-nest.x, L.y-nest.y) < nest.r+R*0.6){
-    const n=tail.length, batch={remaining:n, total:n*(n+1)/2};
-    for(let i=0;i<n;i++){ const p=tailPos(i);
-      delivering.push({x:p.x,y:p.y,sx:p.x,sy:p.y,color:tail[i].color,pts:i+1,delay:i*0.1,t:0,prog:0,batch}); }
+    const n=tail.length, batch={remaining:n, total:0, hasGolden:false};
+    for(let i=0;i<n;i++){ const p=tailPos(i), golden=!!tail[i].golden, pts=(i+1)*(golden?10:1);
+      batch.total+=pts; if(golden) batch.hasGolden=true;
+      delivering.push({x:p.x,y:p.y,sx:p.x,sy:p.y,color:tail[i].color,golden,pts,delay:i*0.1,t:0,prog:0,batch}); }
     tail.length=0; SFX.deliver();
   }
 
@@ -334,12 +347,15 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     d.x=d.sx+(nest.x-d.sx)*ease; d.y=d.sy+(nest.y-10-d.sy)*ease-Math.sin(prog*Math.PI)*36;
     if(prog>=1){
       score+=d.pts; banked++; addPuff(nest.x,nest.y-10,d.color); SFX.recollect();
-      popups.push({x:nest.x+(Math.random()-0.5)*24,y:nest.y-34,text:'+'+d.pts,color:'#fff3da',size:15,life:0.55,life0:0.55,vy:-46});
+      popups.push({x:nest.x+(Math.random()-0.5)*24,y:nest.y-34,text:(d.golden?'✨+':'+')+d.pts,
+        color:d.golden?'#ffd700':'#fff3da',size:d.golden?30:22,life:0.6,life0:0.6,vy:-46});
+      if(d.golden) for(let k=0;k<6;k++) addPuff(nest.x+(Math.random()-0.5)*30, nest.y-14+(Math.random()-0.5)*16, '#ffe9a8');
       d.batch.remaining--;
       if(d.batch.remaining<=0){
         popups.push({x:nest.x,y:nest.y-46,text:'ボーナス +'+d.batch.total+'!',color:'#ffd27a',size:30,life:1.3,life0:1.3,vy:-42,bounce:true});
         for(let k=0;k<12;k++) addPuff(nest.x+(Math.random()-0.5)*46, nest.y-10+(Math.random()-0.5)*22, palette[(Math.random()*palette.length)|0]);
         SFX.deliver();
+        if(d.batch.hasGolden) setTimeout(()=>SFX.sparkle(), 350);
       }
       delivering.splice(i,1);
     }
@@ -385,11 +401,11 @@ function draw(){
   ctx.quadraticCurveTo(W*0.4,H-52,W*0.7,H-30); ctx.quadraticCurveTo(W*0.9,H-14,W,H-34); ctx.lineTo(W,H); ctx.fill();
 
   drawNest();
-  for(const o of loose){ const blink = o.life<1.5 && (Math.floor(o.life*8)%2===0); if(!blink) miniLovot(o.x,o.y,0.78,o.color,'sad'); }
-  for(const e of enemies) miniLovot(e.x,e.y,0.82,e.color,'idle');
+  for(const o of loose){ const blink = o.life<1.5 && (Math.floor(o.life*8)%2===0); if(!blink) miniLovot(o.x,o.y,0.78,o.color,'sad',o.golden); }
+  for(const e of enemies) miniLovot(e.x,e.y,0.82,e.color,'idle',e.golden);
   // tail followers (far first)
-  for(let i=tail.length-1;i>=0;i--){ const p=tailPos(i); miniLovot(p.x,p.y,0.7,tail[i].color,'happy'); }
-  for(const d of delivering) miniLovot(d.x,d.y,0.7-d.prog*0.3,d.color,'happy');
+  for(let i=tail.length-1;i>=0;i--){ const p=tailPos(i); miniLovot(p.x,p.y,0.7,tail[i].color,'happy',tail[i].golden); }
+  for(const d of delivering) miniLovot(d.x,d.y,0.7-d.prog*0.3,d.color,'happy',d.golden);
   drawLovot();
   for(const p of puffs){ ctx.fillStyle=`rgba(255,255,255,${Math.max(0,p.a)*0.7})`; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill();
     ctx.strokeStyle=hexA(p.c,Math.max(0,p.a)); ctx.lineWidth=2; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.stroke(); }
@@ -468,15 +484,42 @@ function hoodedLovot(cover, mood, horn, hornGlow, lookX, lookY){
     ctx.fillStyle='#34343b'; ctx.beginPath(); ctx.ellipse(0,-R*1.12-R*0.48,R*0.16,R*0.14,0,0,7); ctx.fill();
     if(hornGlow!==undefined){ ctx.fillStyle=`rgba(140,220,255,${0.35+hornGlow*0.5})`; ctx.beginPath(); ctx.arc(0,-R*1.12-R*0.48,R*0.055,0,7); ctx.fill(); } }
 }
-function miniLovot(x,y,sc,color,mood){
+function miniLovot(x,y,sc,color,mood,golden){
   ctx.save(); ctx.translate(x,y); ctx.scale(sc,sc);
   const bob=Math.sin(L.bob+x*0.05)*2; ctx.translate(0,bob);
+  if(golden){
+    const pulse=0.5+0.5*Math.sin(L.bob*3), breathe=1+0.06*Math.sin(L.bob*4);
+    ctx.scale(breathe,breathe);
+    // big soft outer glow, pulsing
+    const og=ctx.createRadialGradient(0,0,R*0.4,0,0,R*(2.3+pulse*0.4));
+    og.addColorStop(0,`rgba(255,235,150,${0.35+pulse*0.2})`); og.addColorStop(1,'rgba(255,235,150,0)');
+    ctx.fillStyle=og; ctx.beginPath(); ctx.arc(0,0,R*(2.3+pulse*0.4),0,7); ctx.fill();
+    // brighter inner core
+    const gg=ctx.createRadialGradient(0,0,4,0,0,R*1.3); gg.addColorStop(0,'rgba(255,250,220,.7)'); gg.addColorStop(1,'rgba(255,225,140,0)');
+    ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(0,0,R*1.3,0,7); ctx.fill();
+    // rotating halo ring
+    ctx.save(); ctx.rotate(L.bob*1.1); ctx.setLineDash([6,7]); ctx.lineDashOffset=0;
+    ctx.strokeStyle=`rgba(255,215,90,${0.5+pulse*0.3})`; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(0,0,R*1.2,0,7); ctx.stroke(); ctx.restore();
+  }
   // little balloon above
   ctx.strokeStyle='rgba(120,120,130,.5)'; ctx.lineWidth=1.6;
   ctx.beginPath(); ctx.moveTo(0,-R*1.1); ctx.quadraticCurveTo(R*0.3,-R*1.5,R*0.28,-R*1.75); ctx.stroke();
   const bg=ctx.createRadialGradient(R*0.2,-R*1.85,2,R*0.28,-R*1.75,16); bg.addColorStop(0,'#fff'); bg.addColorStop(.3,color); bg.addColorStop(1,shade(color));
   ctx.fillStyle=bg; ctx.beginPath(); ctx.ellipse(R*0.28,-R*1.78,13,16,0,0,7); ctx.fill();
   hoodedLovot(color, mood, false, undefined, 0, mood==='sad'?0.8:0);
+  if(golden){
+    const n=7;
+    for(let i=0;i<n;i++){
+      const a=L.bob*1.6+i*(Math.PI*2/n), rad=R*(1.1+0.35*((i*37)%5)/5), sx=Math.cos(a)*rad, sy=Math.sin(a)*rad*0.85;
+      const tw=0.5+0.5*Math.sin(L.bob*5+i*2), s=4+5*tw;
+      ctx.save(); ctx.translate(sx,sy); ctx.rotate(a); ctx.globalAlpha=0.55+0.45*tw; ctx.fillStyle=i%2?'#fff7d6':'#ffd76b';
+      ctx.beginPath();
+      ctx.moveTo(0,-s); ctx.lineTo(s*0.32,-s*0.32); ctx.lineTo(s,0); ctx.lineTo(s*0.32,s*0.32);
+      ctx.lineTo(0,s); ctx.lineTo(-s*0.32,s*0.32); ctx.lineTo(-s,0); ctx.lineTo(-s*0.32,-s*0.32);
+      ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+  }
   ctx.restore();
 }
 function shade(h){ const r=Math.max(0,parseInt(h.slice(1,3),16)-40),g=Math.max(0,parseInt(h.slice(3,5),16)-40),b=Math.max(0,parseInt(h.slice(5,7),16)-40); return `rgb(${r},${g},${b})`; }
