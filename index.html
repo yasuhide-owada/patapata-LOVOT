@@ -29,6 +29,8 @@
   #hud .score small { font-size:15px; font-weight:700; opacity:.75; }
   #hud .carry { margin-top:6px; font-size:14px; font-weight:700; color:#c8863c;
     text-shadow:0 1px 0 rgba(255,255,255,.6); }
+  #hud .modeStat { margin-top:4px; font-size:15px; font-weight:800; color:var(--coral-dk);
+    text-shadow:0 1px 0 rgba(255,255,255,.6); }
 
   #hint { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:5;
     color:var(--cream); opacity:.9; font-size:12.5px; font-weight:600; text-align:center; line-height:1.7;
@@ -58,13 +60,13 @@
   .row input[type=range]::-moz-range-thumb{ width:20px; height:20px; border:none; border-radius:50%; background:var(--gold); }
   .note { font-size:11.5px; opacity:.55; line-height:1.5; margin-top:2px; }
 
-  #title { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center;
+  #title, #result { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center;
     padding:24px; background:rgba(20,17,22,.38); backdrop-filter:blur(2px); }
-  #title.hidden { display:none; }
-  #title .card { width:min(340px, 100%); background:var(--panel-bg); border:1px solid rgba(255,210,180,.16);
+  #title.hidden, #result.hidden { display:none; }
+  #title .card, #result .card { width:min(340px, 100%); background:var(--panel-bg); border:1px solid rgba(255,210,180,.16);
     border-radius:22px; padding:26px 24px 24px; color:var(--cream); box-shadow:0 20px 60px rgba(0,0,0,.45);
     text-align:center; }
-  #title h1 { font-size:22px; font-weight:800; color:var(--gold); letter-spacing:.02em; margin-bottom:4px; }
+  #title h1, #result h1 { font-size:22px; font-weight:800; color:var(--gold); letter-spacing:.02em; margin-bottom:4px; }
   #title .sub { font-size:12px; opacity:.65; margin-bottom:18px; }
   #title .howto { text-align:left; font-size:13.5px; line-height:1.85; background:rgba(0,0,0,.18);
     border-radius:14px; padding:14px 16px; margin-bottom:16px; }
@@ -72,9 +74,23 @@
     text-transform:uppercase; margin-bottom:6px; }
   #title .howto .tease { margin-top:10px; padding-top:10px; border-top:1px dashed rgba(255,255,255,.18);
     font-size:13px; color:#ffd9a0; }
-  #start { width:100%; height:52px; border:none; border-radius:999px; font-size:16px; font-weight:800;
-    letter-spacing:.02em; color:#fff; cursor:pointer;
-    background:linear-gradient(135deg, var(--coral), var(--coral-dk)); box-shadow:0 8px 22px rgba(225,79,112,.5); }
+  #title .modes { display:flex; flex-direction:column; gap:10px; }
+  #title .modeBtn { width:100%; padding:12px 16px; border:none; border-radius:16px; cursor:pointer;
+    text-align:left; color:#fff; background:linear-gradient(135deg, var(--coral), var(--coral-dk));
+    box-shadow:0 6px 16px rgba(225,79,112,.4); }
+  #title .modeBtn .modeName { display:block; font-size:15px; font-weight:800; }
+  #title .modeBtn .modeDesc { display:block; font-size:11.5px; opacity:.85; margin-top:2px; }
+  #title .modeBtn.alt { background:linear-gradient(135deg,#7ecbe0,#4a9fc0); box-shadow:0 6px 16px rgba(74,159,192,.4); }
+  #title .modeBtn.alt2 { background:linear-gradient(135deg,var(--gold),#e0a53f); box-shadow:0 6px 16px rgba(224,165,63,.4); }
+  #result .stats { display:flex; justify-content:space-around; margin:18px 0 14px; }
+  #result .stat span { display:block; font-size:26px; font-weight:800; color:var(--gold); }
+  #result .stat small { display:block; font-size:11px; opacity:.65; margin-top:2px; }
+  #result .best { font-size:13px; font-weight:700; color:#ffd9a0; margin-bottom:16px; min-height:18px; }
+  #result button { width:100%; height:48px; border:none; border-radius:999px; font-size:15px; font-weight:800;
+    letter-spacing:.02em; cursor:pointer; margin-bottom:10px; }
+  #result #r_retry { color:#fff; background:linear-gradient(135deg, var(--coral), var(--coral-dk));
+    box-shadow:0 8px 22px rgba(225,79,112,.5); }
+  #result #r_toTitle { color:var(--cream); background:rgba(255,255,255,.12); margin-bottom:0; }
 </style>
 </head>
 <body>
@@ -92,13 +108,38 @@
       ・横からぶつかると仲間が散らばっちゃうので注意
       <div class="tease">💡 一度にたくさんのちびラボットを集めて巣に返すとボーナス…!?</div>
     </div>
-    <button id="start">あそぶ</button>
+    <div class="modes">
+      <button class="modeBtn" data-mode="practice">
+        <span class="modeName">練習</span><span class="modeDesc">時間無制限で自由にあそぶ</span>
+      </button>
+      <button class="modeBtn alt" data-mode="stage">
+        <span class="modeName">ステージクリア</span><span class="modeDesc">ちびラボットを20体納品でクリア</span>
+      </button>
+      <button class="modeBtn alt2" data-mode="time">
+        <span class="modeName">1分間チャレンジ</span><span class="modeDesc">60秒でどれだけスコアを稼げるか</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="result" class="hidden">
+  <div class="card">
+    <h1 id="r_title">クリア！</h1>
+    <div class="stats">
+      <div class="stat"><span id="r_score">0</span><small>スコア</small></div>
+      <div class="stat"><span id="r_count">0</span><small>納品数</small></div>
+      <div class="stat"><span id="r_time">0:00</span><small>タイム</small></div>
+    </div>
+    <div class="best" id="r_best"></div>
+    <button id="r_retry">もう一度</button>
+    <button id="r_toTitle">タイトルへ戻る</button>
   </div>
 </div>
 
 <div id="hud">
   <div class="score"><span id="score">0</span> <small>スコア</small></div>
   <div class="carry" id="carry">抱えてる: 0</div>
+  <div class="modeStat" id="modeStat"></div>
 </div>
 <div id="hint">左タップ＝左の手 / 右タップ＝右の手 / 両方で上昇<br>上から踏んで仲間に → 巣に連れ帰って納品 / 横からぶつかると散らばる</div>
 
@@ -134,11 +175,18 @@ const L={ x:0,y:0, vx:0,vy:0, tilt:0, bob:0, armL:-0.5, armR:0.5, flapPulseL:0, 
 const SPR={upTimer:0};
 const nest={ x:0,y:0, r:40 };
 let score=0, banked=0;
+const STAGE_TARGET=20, TIME_LIMIT=60;
+let mode='practice', phase='title', elapsed=0, timeLeft=TIME_LIMIT;
 const enemies=[], tail=[], loose=[], puffs=[], hist=[], delivering=[], popups=[];
 function easeOutBack(x){ const c1=1.70158, c3=c1+1; return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2); }
 const SP=7;               // history frames between followers
 const R=30;               // lovot body radius
 const palette=['#ff9db0','#9ad0ff','#c3b0ff','#a6e3b0','#ffb0d8']; // no yellow/gold — that's reserved for the rare golden mini
+// enemy kinds: which sides carry spikes (drawn) and which approach directions are safe to befriend from
+const ENEMY_KINDS={
+  normal: { spikes:['bottom'],              safe:['top','left','right'] },
+  spike:  { spikes:['bottom','left','right'], safe:['top'] },
+};
 const sprDN=new Image(); sprDN.src='assets/images/lovot-wing-down.png';
 const sprUP=new Image(); sprUP.src='assets/images/lovot-wing-up.png';
 const SPRW=231, SPRH=300, EYESI=[[86.4,110.9],[144.6,111.0]], EYERI=10.8;
@@ -158,11 +206,12 @@ const HITCY=SOFFY+R*0.4;
 // No recorded sound files yet: each cue is synthesized with Web Audio. Drop a matching file into
 // assets/sounds/ (see filenames below) and it is picked up automatically in place of the synth tone.
 const SFX=(()=>{
-  let ac;
-  function ensure(){ if(!ac) ac=new (window.AudioContext||window.webkitAudioContext)();
-    if(ac.state==='suspended') ac.resume(); return ac; }
+  const ac=new (window.AudioContext||window.webkitAudioContext)();
+  function ensure(){ if(ac.state==='suspended') ac.resume(); return ac; }
   // voice-tracked sounds (recollect during the delivery fly-in fires every 0.1s) cut the
   // previous instance short instead of stacking, so rapid retriggers stay a crisp blip.
+  // this applies to both synth oscillators and decoded file buffers below — both expose the
+  // same {osc,gain} shape (AudioBufferSourceNode has .stop() just like OscillatorNode).
   const active={};
   function cutVoice(voice,a){ const prev=active[voice]; if(!prev) return;
     try{ prev.gain.cancelScheduledValues(a.currentTime); prev.gain.setValueAtTime(prev.gain.value,a.currentTime);
@@ -190,27 +239,54 @@ const SFX=(()=>{
       tone(null,1568,0.14,'sine',0.13,null,0.14); tone(null,2093,0.18,'sine',0.12,null,0.21); },
     shine:    ()=>{ tone(null,1568,0.12,'sine',0.14); tone(null,2093,0.16,'sine',0.13,null,0.09); },
   };
+  // voice-tracked file cues (retriggered rapidly, same as their synth counterparts above) vs.
+  // one-shot layered cues (deliver/miss/sparkle/shine) that are fine to overlap.
+  const VOICED=new Set(['flap','befriend','recollect','hit','pop']);
   const files={ flap:'assets/sounds/flap.mp3', befriend:'assets/sounds/befriend.wav',
     recollect:'assets/sounds/recollect.mp3', hit:'assets/sounds/hit.wav', deliver:'assets/sounds/deliver.wav',
     pop:'assets/sounds/風船割れる.mp3', miss:'assets/sounds/one_miss.wav', sparkle:'assets/sounds/きらきら輝く3.mp3',
     shine:'assets/sounds/可愛く輝く1.mp3' };
-  const clip={};
-  for(const name in files){ const el=new Audio(); el.volume=0.6; const c={el,found:true};
-    el.addEventListener('error',()=>c.found=false,{once:true}); el.src=files[name]; clip[name]=c; }
-  // reusing the single element (instead of cloning per play) means a retrigger seeks it back
-  // to 0, cutting off whatever was still playing — same cancel-and-restart behavior as tone().
-  function play(name){ const c=clip[name];
-    if(c && c.found && c.el.readyState>0){ c.el.currentTime=0; c.el.play().catch(()=>{}); }
-    else synth[name](); }
+  // decode every file up front into an AudioBuffer: playback is then a plain AudioBufferSourceNode
+  // (sample-accurate, no per-play seek/decode latency) instead of re-seeking a shared <audio>
+  // element, which could fall behind under rapid retriggers (e.g. recollect firing every 0.1s
+  // while a big flock banks in) and made cues feel increasingly delayed over a long session.
+  const buf={};
+  for(const name in files){
+    fetch(files[name]).then(r=>r.ok?r.arrayBuffer():Promise.reject())
+      .then(ab=>ac.decodeAudioData(ab)).then(decoded=>{ buf[name]=decoded; }).catch(()=>{});
+  }
+  function playBuffer(name){
+    const a=ensure(), voice=VOICED.has(name)?name:null;
+    if(voice) cutVoice(voice,a);
+    const src=a.createBufferSource(), g=a.createGain();
+    src.buffer=buf[name];
+    g.gain.setValueAtTime(0,a.currentTime); g.gain.linearRampToValueAtTime(0.6,a.currentTime+0.005);
+    src.connect(g); g.connect(a.destination); src.start();
+    if(voice){ active[voice]={osc:src,gain:g.gain}; src.onended=()=>{ if(active[voice]&&active[voice].osc===src) delete active[voice]; }; }
+  }
+  function play(name){ if(buf[name]) playBuffer(name); else synth[name](); }
   const api={}; for(const name in synth) api[name]=()=>play(name);
   return api;
 })();
 
 // ---------- bgm ----------
+// Plays the whole bgm/ library as a shuffled playlist: order is reshuffled each time it's
+// exhausted, and each track auto-advances to the next when it ends (no per-track looping).
 const BGM=(()=>{
-  const el=new Audio('assets/sounds/bgm/ふわふわの空.mp3');
-  el.loop=true; el.volume=0.35;
+  const TRACKS=[
+    'assets/sounds/bgm/ふわふわの空.mp3', 'assets/sounds/bgm/ふわふわの空_2.mp3', 'assets/sounds/bgm/ふわふわの空_3.mp3',
+    'assets/sounds/bgm/Pixel Parade.mp3', 'assets/sounds/bgm/Pixel Parade_2.mp3', 'assets/sounds/bgm/Pixel Parade_3.mp3',
+  ];
+  function shuffle(arr){ const a=arr.slice();
+    for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]]; }
+    return a; }
+  let order=shuffle(TRACKS), idx=0;
   let muted=localStorage.getItem('lovot_bgm_muted')==='1', started=false;
+  const el=new Audio(); el.volume=0.35; el.src=order[idx];
+  el.addEventListener('ended',()=>{
+    idx++; if(idx>=order.length){ order=shuffle(TRACKS); idx=0; }
+    el.src=order[idx]; if(!muted) el.play().catch(()=>{});
+  });
   const btn=document.getElementById('bgm');
   function refreshBtn(){ btn.textContent=muted?'🔇':'🔊'; }
   function start(){ if(started) return; started=true; if(!muted) el.play().catch(()=>{}); }
@@ -225,16 +301,17 @@ const BGM=(()=>{
 
 function resetAll(){ L.x=W*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.iframe=0;
   tail.length=0; loose.length=0; enemies.length=0; hist.length=0; score=0; banked=0;
-  delivering.length=0; popups.length=0;
+  delivering.length=0; popups.length=0; elapsed=0; timeLeft=TIME_LIMIT;
   for(let i=0;i<5;i++) spawnEnemy(); }
 function respawnLovot(){ L.x=nest.x; L.y=nest.y-120; L.vx=0; L.vy=0; L.balloons=2; L.iframe=1.6; hist.length=0; }
 
 function spawnEnemy(){
   const side=Math.random()<0.5?-1:1;
   const golden=Math.random()<0.08;   // rare golden mini: sparkly, worth 10x when delivered
+  const kind=Math.random()<0.25?'spike':'normal';
   enemies.push({ x: side<0? 40: W-40, y: 90+Math.random()*(H*0.55),
     vx: side*(24+Math.random()*26), vy:0, bob:Math.random()*7, r:17,
-    color: golden?'#ffd700':palette[(Math.random()*palette.length)|0], golden, t:Math.random()*10 });
+    color: golden?'#ffd700':palette[(Math.random()*palette.length)|0], golden, kind, t:Math.random()*10 });
   if(golden) SFX.shine();
 }
 
@@ -246,7 +323,7 @@ function fadeHint(){ if(!hinted){ hinted=true; document.getElementById('hint').s
 function flap(side){ const f=P.flap*(L.balloons>=2?1:0.82); L.wing=0.13; SPR.upTimer=0.12; SFX.flap();
   if(side==='L'){ L.vy-=f; L.vx-=P.side; L.flapPulseL=1; } else { L.vy-=f; L.vx+=P.side; L.flapPulseR=1; } }
 let started=false;
-function press(side){ if(!started)return; BGM.start(); flap(side); if(side==='L')tL=0; else tR=0; }
+function press(side){ if(!started||phase!=='playing')return; BGM.start(); flap(side); if(side==='L')tL=0; else tR=0; }
 const stage=document.getElementById('stage');
 addEventListener('contextmenu',e=>e.preventDefault());
 stage.addEventListener('pointerdown',e=>{ const wl=[...pointers.values()].includes('L'), wr=[...pointers.values()].includes('R');
@@ -285,6 +362,7 @@ function tailPos(i){ const idx=Math.min((i+1)*SP, hist.length-1); return hist[id
 // ---------- loop ----------
 let last=performance.now();
 function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
+  if(phase!=='playing'){ draw(); requestAnimationFrame(tick); return; }
 
   if(holdL){ tL+=dt*1000; if(tL>=P.interval){ flap('L'); tL-=P.interval; } }
   if(holdR){ tR+=dt*1000; if(tR>=P.interval){ flap('R'); tR-=P.interval; } }
@@ -308,13 +386,18 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     if(e.x<30){e.x=30;e.vx*=-1;} if(e.x>W-30){e.x=W-30;e.vx*=-1;}
     if(e.y<80)e.y=80; if(e.y>H-100)e.y=H-100; }
 
-  // collisions lovot vs enemies (hit-circle centered on the sprite's visual body, not the eye anchor)
-  const hcy=L.y+HITCY, hitR=R*P.hit, feetY=hcy+hitR;
+  // collisions lovot vs enemies (hit-circle centered on the sprite's visual body, not the eye anchor).
+  // each enemy kind has spiky sides and a set of safe approach directions (see ENEMY_KINDS) —
+  // touching a spiky side scatters/damages, touching a safe side befriends it.
+  const hcy=L.y+HITCY, hitR=R*P.hit;
   if(L.iframe<=0){
-    for(const e of enemies){ const dx=L.x-e.x, dy=hcy-e.y; const d=Math.hypot(dx,dy);
+    for(const e of enemies){ const dx=L.x-e.x, dy0=hcy-e.y; const d=Math.hypot(dx,dy0);
       if(d < hitR+e.r){
-        if(feetY < e.y+e.r*0.15){ befriend(e); break; }        // feet still above/around the enemy's top → stomp
-        else { if(tail.length>0) scatterTail(); else loseBalloon(); break; } // otherwise a side/below hit
+        const dy=dy0-e.r*0.3; // bias so a near-top approach still reads as "top" (keeps stomps forgiving)
+        const dir=Math.abs(dy)>Math.abs(dx) ? (dy<0?'top':'bottom') : (dx<0?'left':'right');
+        const safe=ENEMY_KINDS[e.kind||'normal'].safe;
+        if(safe.includes(dir)){ befriend(e); break; }
+        else { if(tail.length>0) scatterTail(); else loseBalloon(); break; }
       } }
   }
 
@@ -333,7 +416,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   // adding its place in line (1,2,3…) so the running total lands on the triangular bonus
   // by the time the last one arrives — golden minis are worth 10x their place in line
   if(tail.length>0 && Math.hypot(L.x-nest.x, L.y-nest.y) < nest.r+R*0.6){
-    const n=tail.length, batch={remaining:n, total:0, hasGolden:false};
+    const n=tail.length, batch={remaining:n, total:0, hasGolden:false, count:n};
     for(let i=0;i<n;i++){ const p=tailPos(i), golden=!!tail[i].golden, pts=(i+1)*(golden?10:1);
       batch.total+=pts; if(golden) batch.hasGolden=true;
       delivering.push({x:p.x,y:p.y,sx:p.x,sy:p.y,color:tail[i].color,golden,pts,delay:i*0.1,t:0,prog:0,batch}); }
@@ -352,7 +435,8 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
       if(d.golden) for(let k=0;k<6;k++) addPuff(nest.x+(Math.random()-0.5)*30, nest.y-14+(Math.random()-0.5)*16, '#ffe9a8');
       d.batch.remaining--;
       if(d.batch.remaining<=0){
-        popups.push({x:nest.x,y:nest.y-46,text:'ボーナス +'+d.batch.total+'!',color:'#ffd27a',size:30,life:1.3,life0:1.3,vy:-42,bounce:true});
+        popups.push({x:nest.x,y:nest.y-50,text:d.batch.count+'体 とどけた！',text2:'ボーナス +'+d.batch.total,
+          color:'#ffd27a',color2:'#fff3da',size:32,size2:19,life:2.4,life0:2.4,vy:-28,bounce:true});
         for(let k=0;k<12;k++) addPuff(nest.x+(Math.random()-0.5)*46, nest.y-10+(Math.random()-0.5)*22, palette[(Math.random()*palette.length)|0]);
         SFX.deliver();
         if(d.batch.hasGolden) setTimeout(()=>SFX.sparkle(), 350);
@@ -360,6 +444,11 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
       delivering.splice(i,1);
     }
   }
+
+  // mode progress / end conditions
+  elapsed+=dt;
+  if(mode==='time'){ timeLeft=Math.max(0,TIME_LIMIT-elapsed); if(timeLeft<=0) finishGame(); }
+  else if(mode==='stage' && banked>=STAGE_TARGET) finishGame();
 
   // floating score popups
   for(let i=popups.length-1;i>=0;i--){ const p=popups[i]; p.life-=dt; p.y+=p.vy*dt; p.vy*=Math.max(0,1-dt*1.5);
@@ -381,9 +470,16 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
 
   document.getElementById('score').textContent=score;
   document.getElementById('carry').textContent='抱えてる: '+tail.length;
+  updateModeStat();
 
   draw();
   requestAnimationFrame(tick);
+}
+function updateModeStat(){
+  const el=document.getElementById('modeStat');
+  if(mode==='stage') el.textContent='納品 '+Math.min(banked,STAGE_TARGET)+' / '+STAGE_TARGET+'体';
+  else if(mode==='time'){ const s=Math.ceil(timeLeft); el.textContent='残り '+Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+  else el.textContent='';
 }
 
 // ---------- draw ----------
@@ -402,7 +498,7 @@ function draw(){
 
   drawNest();
   for(const o of loose){ const blink = o.life<1.5 && (Math.floor(o.life*8)%2===0); if(!blink) miniLovot(o.x,o.y,0.78,o.color,'sad',o.golden); }
-  for(const e of enemies) miniLovot(e.x,e.y,0.82,e.color,'idle',e.golden);
+  for(const e of enemies) miniLovot(e.x,e.y,0.82,e.color,'idle',e.golden,ENEMY_KINDS[e.kind||'normal'].spikes);
   // tail followers (far first)
   for(let i=tail.length-1;i>=0;i--){ const p=tailPos(i); miniLovot(p.x,p.y,0.7,tail[i].color,'happy',tail[i].golden); }
   for(const d of delivering) miniLovot(d.x,d.y,0.7-d.prog*0.3,d.color,'happy',d.golden);
@@ -415,7 +511,11 @@ function draw(){
     ctx.font=`900 ${p.size}px ui-rounded, "Hiragino Maru Gothic ProN", sans-serif`;
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.lineWidth=4; ctx.strokeStyle='rgba(40,20,10,.55)'; ctx.strokeText(p.text,0,0);
-    ctx.fillStyle=p.color; ctx.fillText(p.text,0,0); ctx.restore(); }
+    ctx.fillStyle=p.color; ctx.fillText(p.text,0,0);
+    if(p.text2){ const dy=p.size*0.66; ctx.font=`800 ${p.size2||Math.round(p.size*0.55)}px ui-rounded, "Hiragino Maru Gothic ProN", sans-serif`;
+      ctx.lineWidth=3; ctx.strokeText(p.text2,0,dy);
+      ctx.fillStyle=p.color2||p.color; ctx.fillText(p.text2,0,dy); }
+    ctx.restore(); }
   if(DEBUG){ ctx.lineWidth=2;
     ctx.strokeStyle='rgba(0,200,255,.95)'; ctx.beginPath(); ctx.arc(L.x,L.y+HITCY,R*P.hit,0,7); ctx.stroke();
     ctx.strokeStyle='rgba(255,60,80,.9)'; for(const e of enemies){ ctx.beginPath(); ctx.arc(e.x,e.y,e.r,0,7); ctx.stroke(); }
@@ -484,7 +584,31 @@ function hoodedLovot(cover, mood, horn, hornGlow, lookX, lookY){
     ctx.fillStyle='#34343b'; ctx.beginPath(); ctx.ellipse(0,-R*1.12-R*0.48,R*0.16,R*0.14,0,0,7); ctx.fill();
     if(hornGlow!==undefined){ ctx.fillStyle=`rgba(140,220,255,${0.35+hornGlow*0.5})`; ctx.beginPath(); ctx.arc(0,-R*1.12-R*0.48,R*0.055,0,7); ctx.fill(); } }
 }
-function miniLovot(x,y,sc,color,mood,golden){
+function drawSpikes(sides,color){
+  // soft rounded "thorn" petals in the mini's own palette, instead of hard gray triangles —
+  // matches the rest of the design's borderless, pastel-gradient look
+  const dark=shade(color);
+  const arcs={ top:[235,305], bottom:[55,125], left:[145,215], right:[-35,35] };
+  for(const side of sides){
+    const [a0,a1]=arcs[side], n=1;
+    for(let i=0;i<n;i++){
+      const t=n===1?0.5:i/(n-1), ang=(a0+(a1-a0)*t)*Math.PI/180;
+      const baseR=R*0.92, len=R*0.42, w=6;
+      const bx=Math.cos(ang)*baseR, by=Math.sin(ang)*baseR*0.92;
+      ctx.save(); ctx.translate(bx,by); ctx.rotate(ang+Math.PI/2);
+      const g=ctx.createLinearGradient(0,2,0,-len);
+      g.addColorStop(0,color); g.addColorStop(1,dark);
+      ctx.fillStyle=g;
+      ctx.beginPath();
+      ctx.moveTo(-w,2);
+      ctx.quadraticCurveTo(-w*0.3,-len*0.6,0,-len);
+      ctx.quadraticCurveTo(w*0.3,-len*0.6,w,2);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+function miniLovot(x,y,sc,color,mood,golden,spikeSides){
   ctx.save(); ctx.translate(x,y); ctx.scale(sc,sc);
   const bob=Math.sin(L.bob+x*0.05)*2; ctx.translate(0,bob);
   if(golden){
@@ -508,6 +632,7 @@ function miniLovot(x,y,sc,color,mood,golden){
   const bg=ctx.createRadialGradient(R*0.2,-R*1.85,2,R*0.28,-R*1.75,16); bg.addColorStop(0,'#fff'); bg.addColorStop(.3,color); bg.addColorStop(1,shade(color));
   ctx.fillStyle=bg; ctx.beginPath(); ctx.ellipse(R*0.28,-R*1.78,13,16,0,0,7); ctx.fill();
   hoodedLovot(color, mood, false, undefined, 0, mood==='sad'?0.8:0);
+  if(spikeSides && spikeSides.length) drawSpikes(spikeSides,color);
   if(golden){
     const n=7;
     for(let i=0;i<n;i++){
@@ -561,10 +686,48 @@ bind('climb','maxUp',x=>Math.round(x)); bind('side','side',x=>Math.round(x));
 bind('hit','hit',x=>Math.round(R*x)+'px');
 let DEBUG=false; document.getElementById('dbg').addEventListener('change',e=>{ DEBUG=e.target.checked; });
 
-// ---------- title screen ----------
-document.getElementById('start').addEventListener('click',()=>{
+// ---------- title / result screens ----------
+function startGame(m){
+  mode=m;
   document.getElementById('title').classList.add('hidden');
-  resetAll(); started=true; BGM.start(); fadeHint();
+  document.getElementById('result').classList.add('hidden');
+  resetAll(); phase='playing'; started=true; BGM.start(); fadeHint();
+  updateModeStat();
+}
+document.querySelectorAll('.modeBtn').forEach(btn=>{
+  btn.addEventListener('click',()=>startGame(btn.dataset.mode));
+});
+
+function finishGame(){
+  if(phase!=='playing') return;
+  phase='result';
+  const mm=Math.floor(elapsed/60), ss=Math.floor(elapsed%60);
+  document.getElementById('r_score').textContent=score;
+  document.getElementById('r_count').textContent=banked;
+  document.getElementById('r_time').textContent=mm+':'+String(ss).padStart(2,'0');
+  const rTitle=document.getElementById('r_title'), bestEl=document.getElementById('r_best');
+  let bestText='';
+  if(mode==='stage'){
+    rTitle.textContent='ステージクリア！';
+    const key='lovot_best_stage_time', prevBest=parseFloat(localStorage.getItem(key));
+    if(isNaN(prevBest) || elapsed<prevBest){ localStorage.setItem(key,elapsed);
+      bestText='🎉 ベスト更新！ '+mm+':'+String(ss).padStart(2,'0'); }
+    else{ const bm=Math.floor(prevBest/60), bs=Math.floor(prevBest%60);
+      bestText='自己ベスト: '+bm+':'+String(bs).padStart(2,'0'); }
+  } else if(mode==='time'){
+    rTitle.textContent='タイムアップ！';
+    const key='lovot_best_time_score', prevBest=parseInt(localStorage.getItem(key)||'0',10);
+    if(score>prevBest){ localStorage.setItem(key,score); bestText='🎉 ベスト更新！ '+score; }
+    else bestText='自己ベスト: '+prevBest;
+  }
+  bestEl.textContent=bestText;
+  document.getElementById('result').classList.remove('hidden');
+}
+document.getElementById('r_retry').addEventListener('click',()=>startGame(mode));
+document.getElementById('r_toTitle').addEventListener('click',()=>{
+  document.getElementById('result').classList.add('hidden');
+  phase='title'; started=false;
+  document.getElementById('title').classList.remove('hidden');
 });
 
 resize(); resetAll(); requestAnimationFrame(tick);
