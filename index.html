@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>LOVOT バルーン試作 — コアループ</title>
+<title>LOVOTの　ふわふわレスキュー</title>
 <style>
   :root {
     --ink:      #2b2730;              /* warm charcoal, same tone as the LOVOT's pupils */
@@ -110,7 +110,7 @@
 
 <div id="title">
   <div class="card">
-    <h1>LOVOT バルーン</h1>
+    <h1>LOVOTの　ふわふわレスキュー</h1>
     <div class="sub">ちびラボットを集めて巣に届けよう</div>
     <div class="howto">
       <div class="head">あそびかた</div>
@@ -205,7 +205,7 @@ const TIME_LIMIT=60;
 // stage-clear mode: 3 stages — the first two are delivery quotas that get spikier/faster,
 // the third replaces the quota with a multi-hit boss (see spawnBoss/defeatBoss below).
 const STAGE_TARGETS=[8,14], STAGE_SPIKE=[0,0.25,0.4], STAGE_SPEED=[0.85,1,1.2];
-const BOSS_HITS=5, BOSS_REWARD=10;
+const BOSS_HITS=4, BOSS_REWARD=10;
 const ENEMY_SPAWN_GRACE=3; // seconds a freshly (re)spawned mini is see-through and can't be touched
 const INVINCIBLE_DUR=8, STAR_MIN=15, STAR_MAX=25; // invincibility star: duration, and its spawn-interval range
 let mode='practice', phase='title', elapsed=0, timeLeft=TIME_LIMIT;
@@ -257,7 +257,7 @@ function updateWorldHeight(){
       if(golden) SFX.shine(); }
   }
 }
-const enemies=[], tail=[], loose=[], puffs=[], hist=[], delivering=[], popups=[], powerStars=[];
+const enemies=[], tail=[], loose=[], puffs=[], hist=[], delivering=[], popups=[], powerStars=[], bossBullets=[];
 function easeOutBack(x){ const c1=1.70158, c3=c1+1; return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2); }
 const SP=7;               // history frames between followers
 const R=30;               // lovot body radius
@@ -269,6 +269,8 @@ const ENEMY_KINDS={
 };
 const sprDN=new Image(); sprDN.src='assets/images/lovot-wing-down.png';
 const sprUP=new Image(); sprUP.src='assets/images/lovot-wing-up.png';
+const sprNest=new Image(); sprNest.src='assets/images/NEST.png';
+const NEST_W=150, NEST_H=100; // matches the source's 432x288 aspect ratio
 const SPRW=231, SPRH=300, EYESI=[[86.4,110.9],[144.6,111.0]], EYERI=10.8;
 const SPRSCALE=(R*3.05)/SPRH, SDW=SPRW*SPRSCALE, SDH=SPRH*SPRSCALE;
 const _emx=(EYESI[0][0]+EYESI[1][0])/2, _emy=(EYESI[0][1]+EYESI[1][1])/2;
@@ -320,14 +322,16 @@ const SFX=(()=>{
     shine:    ()=>{ tone(null,1568,0.12,'sine',0.14); tone(null,2093,0.16,'sine',0.13,null,0.09); },
     power:    ()=>{ tone(null,660,0.1,'square',0.14); tone(null,880,0.1,'square',0.14,null,0.08);
       tone(null,1320,0.22,'square',0.16,null,0.16); },
+    fanfare:  ()=>{ tone(null,784,0.14,'square',0.15); tone(null,988,0.14,'square',0.15,null,0.1);
+      tone(null,1175,0.26,'square',0.17,null,0.2); },
   };
   // voice-tracked file cues (retriggered rapidly, same as their synth counterparts above) vs.
-  // one-shot layered cues (deliver/miss/sparkle/shine/power) that are fine to overlap.
+  // one-shot layered cues (deliver/miss/sparkle/shine/power/fanfare) that are fine to overlap.
   const VOICED=new Set(['flap','befriend','recollect','hit','pop']);
   const files={ flap:'assets/sounds/flap.mp3', befriend:'assets/sounds/befriend.wav',
     recollect:'assets/sounds/recollect.mp3', hit:'assets/sounds/hit.wav', deliver:'assets/sounds/deliver.wav',
     pop:'assets/sounds/風船割れる.mp3', miss:'assets/sounds/one_miss.wav', sparkle:'assets/sounds/きらきら輝く3.mp3',
-    shine:'assets/sounds/可愛く輝く1.mp3', power:'assets/sounds/star.mp3' };
+    shine:'assets/sounds/可愛く輝く1.mp3', power:'assets/sounds/star.mp3', fanfare:'assets/sounds/スタジアムの歓声.mp3' };
   // decode every file up front into an AudioBuffer: playback is then a plain AudioBufferSourceNode
   // (sample-accurate, no per-play seek/decode latency) instead of re-seeking a shared <audio>
   // element, which could fall behind under rapid retriggers (e.g. recollect firing every 0.1s
@@ -412,7 +416,7 @@ function resetAll(){ L.x=W*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.ifra
   tail.length=0; loose.length=0; enemies.length=0; hist.length=0; score=0; banked=0;
   delivering.length=0; popups.length=0; elapsed=0; timeLeft=TIME_LIMIT;
   countdownSec=null; countdownPulse=0;
-  stageNum=1; boss=null; bossPhase='none'; camY=0;
+  stageNum=1; boss=null; bossPhase='none'; camY=0; bossBullets.length=0;
   powerStars.length=0; invincible=0; nextStarAt=STAR_MIN+Math.random()*(STAR_MAX-STAR_MIN);
   BGM.endOverride(); StarAmbient.set(false);
   updateWorldHeight();
@@ -530,10 +534,11 @@ function announceStage(title,sub){
   SFX.shine();
 }
 function spawnBoss(){
-  enemies.length=0; // clear the field so the fight reads clean
+  enemies.length=0; bossBullets.length=0; // clear the field so the fight reads clean
   const baseY=camY+H*0.3;
   boss={ x:W*0.5, y:baseY, baseY, dir:Math.random()<0.5?-1:1, r:54, hp:BOSS_HITS, maxHp:BOSS_HITS,
-    iframe:0, flash:0, t:Math.random()*10, color:palette[(Math.random()*palette.length)|0] };
+    iframe:0, flash:0, t:Math.random()*10, color:palette[(Math.random()*palette.length)|0],
+    state:'patrol', stateT:0, alpha:1, throwCooldown:1.6, telegraph:0 };
   bossPhase='fighting';
   BGM.playOverride('assets/sounds/bgm/BOSS_BATTLE.mp3');
 }
@@ -545,9 +550,17 @@ function defeatBoss(){
     delivering.push({x:sx,y:sy,sx,sy,color:palette[i%palette.length],golden:false,pts,delay:i*0.08,t:0,prog:0,batch}); }
   for(let k=0;k<18;k++) addPuff(bx+(Math.random()-0.5)*70, by+(Math.random()-0.5)*70, palette[(Math.random()*palette.length)|0]);
   popups.push({x:bx,y:by-boss.r-24,text:'ボス撃破！',color:'#ff9db0',size:32,life:1.4,life0:1.4,vy:-30,bounce:true});
-  SFX.deliver();
+  SFX.deliver(); SFX.fanfare();
+  bossBullets.length=0;
   boss=null; bossPhase='defeated';
   BGM.endOverride();
+}
+// boss patterns, keyed by remaining HP: 1=default patrol, 2=faster patrol, 3=stationary blink+throw,
+// 4=fast patrol while also throwing
+function bossPattern(){ if(boss.hp>=4) return 1; if(boss.hp===3) return 2; if(boss.hp===2) return 3; return 4; }
+function throwBossBullet(){
+  bossBullets.push({ x:boss.x, y:boss.y-boss.r*0.6, vx:(Math.random()-0.5)*170, vy:-430-Math.random()*70,
+    r:9, color:boss.color, life:4 });
 }
 function checkStageAdvance(){
   if(mode!=='stage') return;
@@ -589,12 +602,44 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     if(e.y<150)e.y=150; if(e.y>worldH-100)e.y=worldH-100; // 150, not 80: leaves room above to stomp from
     if(e.grace>0) e.grace=Math.max(0,e.grace-dt); }
 
-  // boss (stage 3): slow side-to-side patrol with a gentle bob
-  if(boss){ boss.t+=dt; boss.x+=boss.dir*46*dt;
-    if(boss.x<80){boss.x=80; boss.dir=1;} if(boss.x>W-80){boss.x=W-80; boss.dir=-1;}
-    boss.y=boss.baseY+Math.sin(boss.t*1.1)*22;
+  // boss (stage 3): patrol pattern escalates as HP drops (see bossPattern()); every hit that
+  // doesn't finish it off sends it fleeing upward — semi-transparent and untouchable — before it
+  // drops back to its starting spot and resumes the fight at the next pattern tier
+  if(boss){
+    boss.t+=dt;
+    if(boss.state==='patrol'){
+      const pat=bossPattern(), moving=pat!==3, fast=pat===2||pat===4, speed=fast?104:46;
+      if(moving){ boss.x+=boss.dir*speed*dt;
+        if(boss.x<80){boss.x=80; boss.dir=1;} if(boss.x>W-80){boss.x=W-80; boss.dir=-1;} }
+      boss.y=boss.baseY+Math.sin(boss.t*1.1)*22;
+      if(pat>=3){ // patterns 3 & 4 lob a bullet on a telegraphed cycle
+        if(boss.telegraph>0){ boss.telegraph-=dt; if(boss.telegraph<=0){ throwBossBullet(); boss.throwCooldown=2.0; } }
+        else { boss.throwCooldown-=dt; if(boss.throwCooldown<=0) boss.telegraph=0.55; }
+      }
+    } else if(boss.state==='flee'){
+      boss.stateT+=dt; const dur=0.55, t=Math.min(1,boss.stateT/dur), e=1-(1-t)*(1-t);
+      boss.alpha=1-0.6*e; boss.x=boss.fleeFromX+(W*0.5-boss.fleeFromX)*e; boss.y=boss.fleeFromY+(boss.fleeToY-boss.fleeFromY)*e;
+      if(t>=1){ boss.state='descend'; boss.stateT=0; }
+    } else if(boss.state==='descend'){
+      boss.stateT+=dt; const dur=0.7, t=Math.min(1,boss.stateT/dur), e=1-(1-t)*(1-t);
+      boss.alpha=0.4+0.6*e; boss.x=W*0.5; boss.y=boss.fleeToY+(boss.baseY-boss.fleeToY)*e;
+      if(t>=1){ boss.state='patrol'; boss.stateT=0; boss.alpha=1; boss.x=W*0.5; boss.y=boss.baseY;
+        boss.dir=Math.random()<0.5?-1:1; boss.iframe=0.3; boss.throwCooldown=1.6; boss.telegraph=0; }
+    }
     if(boss.iframe>0) boss.iframe-=dt;
-    boss.flash=Math.max(0,boss.flash-dt*3); }
+    boss.flash=Math.max(0,boss.flash-dt*3);
+  }
+
+  // boss bullets: thrown up in an arc, fall under gravity, and hurt the lovot on contact from any side
+  for(let i=bossBullets.length-1;i>=0;i--){ const b=bossBullets[i];
+    b.vy+=P.grav*dt; b.x+=b.vx*dt; b.y+=b.vy*dt; b.life-=dt;
+    if(Math.hypot(L.x-b.x, L.y-b.y) < R*P.hit*0.7+b.r){
+      bossBullets.splice(i,1);
+      if(L.iframe<=0 && invincible<=0){ if(tail.length>0) scatterTail(); else loseBalloon(); }
+      continue;
+    }
+    if(b.y>worldH-40 || b.life<=0 || b.x<-20 || b.x>W+20) bossBullets.splice(i,1);
+  }
 
   // collisions lovot vs enemies (hit-circle centered on the sprite's visual body, not the eye anchor).
   // each enemy kind has spiky sides and a set of safe approach directions (see ENEMY_KINDS) —
@@ -613,18 +658,21 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
       } }
   }
 
-  // boss collision: only safe from the top, and takes several stomps to go down
-  if(boss && L.iframe<=0){
+  // boss collision: only while it's actually patrolling (not mid-flee/descend), only safe from
+  // the top, and takes several stomps to go down
+  if(boss && boss.state==='patrol' && L.iframe<=0){
     const dx=L.x-boss.x, dy0=hcy-boss.y, d=Math.hypot(dx,dy0);
     if(d < hitR+boss.r){
       const dy=dy0-boss.r*0.3;
       const dir=Math.abs(dy)>Math.abs(dx) ? (dy<0?'top':'bottom') : (dx<0?'left':'right');
       if(dir==='top' || invincible>0){ // star powerup: the boss can be hit from any angle too
         if(boss.iframe<=0){
-          boss.hp--; boss.iframe=0.45; boss.flash=1; L.vy=-320; L.squash=0.5;
+          boss.hp--; boss.flash=1; L.vy=-320; L.squash=0.5;
           addPuff(boss.x,boss.y-boss.r*0.4,boss.color); SFX.hit();
           popups.push({x:boss.x,y:boss.y-boss.r-14,text:'HIT!',color:'#fff3da',size:20,life:0.5,life0:0.5,vy:-40});
           if(boss.hp<=0) defeatBoss();
+          else{ boss.state='flee'; boss.stateT=0; boss.fleeFromX=boss.x; boss.fleeFromY=boss.y;
+            boss.fleeToY=Math.max(100,boss.baseY-H*0.6); }
         }
       } else { if(tail.length>0) scatterTail(); else loseBalloon(); }
     }
@@ -771,30 +819,44 @@ function lerpHex(a,b,t){
   const ar=(pa>>16)&255, ag=(pa>>8)&255, ab=pa&255, br=(pb>>16)&255, bg=(pb>>8)&255, bb=pb&255;
   return `rgb(${Math.round(ar+(br-ar)*t)},${Math.round(ag+(bg-ag)*t)},${Math.round(ab+(bb-ab)*t)})`;
 }
+// ground-level sky per stage — a day passing as stage-clear mode progresses
+const STAGE_SKY=[
+  { top:'#a9d4ee', mid:'#cfe6f2', bottom:'#f6e9d8', hillA:'#bfe3a6', hillB:'#a9d792',
+    sunNear:'rgba(255,246,214,.9)', sunFar:'rgba(255,246,214,0)' },               // stage 1: day
+  { top:'#f4a785', mid:'#fbc89c', bottom:'#ffe1b8', hillA:'#cdd68f', hillB:'#b7c17a',
+    sunNear:'rgba(255,190,130,.9)', sunFar:'rgba(255,190,130,0)' },               // stage 2: dusk
+  { top:'#5b4a8f', mid:'#8a6fb0', bottom:'#c98fae', hillA:'#6f7a5e', hillB:'#5a6350',
+    sunNear:'rgba(225,210,255,.85)', sunFar:'rgba(225,210,255,0)' },              // stage 3: twilight boss
+];
+const HIGH_SKY={ top:'#e9d9ff', mid:'#ffe3c2', bottom:'#ffd0dd' }; // the "above the clouds" reveal, same at any stage
 function draw(){
   // altitude fraction (0 at the ground, 1 near the top of a tall stage-2+ world) drives a
   // dreamier upper-sky palette and twinkling stars — the "surprise" for climbing up
   const alt = worldH>H ? Math.min(1,1-camY/(worldH-H)) : 0;
+  // ground-level palette also shifts with the stage itself, like a day passing as you
+  // progress: stage 1 daytime, stage 2 golden-hour dusk, stage 3 (the boss) a dramatic twilight.
+  // practice/time modes never advance stageNum past 1, so they always stay on the day palette.
+  const sky=STAGE_SKY[Math.min(stageNum,STAGE_SKY.length)-1];
   ctx.save(); ctx.translate(0,-camY);
 
   const g=ctx.createLinearGradient(0,camY,0,camY+H);
-  g.addColorStop(0,   lerpHex('#a9d4ee','#e9d9ff',alt));
-  g.addColorStop(.55, lerpHex('#cfe6f2','#ffe3c2',alt));
-  g.addColorStop(1,   lerpHex('#f6e9d8','#ffd0dd',alt));
+  g.addColorStop(0,   lerpHex(sky.top,HIGH_SKY.top,alt));
+  g.addColorStop(.55, lerpHex(sky.mid,HIGH_SKY.mid,alt));
+  g.addColorStop(1,   lerpHex(sky.bottom,HIGH_SKY.bottom,alt));
   ctx.fillStyle=g; ctx.fillRect(0,camY,W,H);
   if(alt>0.1){ for(const st of stars){
     const a=Math.max(0,alt-0.1)*1.15*(0.55+0.45*Math.sin(L.bob*2+st.ph));
     if(a<=0.02) continue;
     ctx.fillStyle=`rgba(255,250,225,${a})`; ctx.beginPath(); ctx.arc(st.x,st.y,st.s,0,7); ctx.fill(); } }
-  const sg=ctx.createRadialGradient(W*0.8,H*0.15,10,W*0.8,H*0.15,170); sg.addColorStop(0,'rgba(255,246,214,.9)'); sg.addColorStop(1,'rgba(255,246,214,0)');
+  const sg=ctx.createRadialGradient(W*0.8,H*0.15,10,W*0.8,H*0.15,170); sg.addColorStop(0,sky.sunNear); sg.addColorStop(1,sky.sunFar);
   ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(W*0.8,H*0.15,170,0,7); ctx.fill();
   for(const cl of clouds){ ctx.fillStyle='rgba(255,255,255,.72)'; puff(cl.x,cl.y,32*cl.s); }
 
   // hills (anchored to the bottom of the world, not the screen — they scroll out of view
   // once the camera climbs into a taller stage-2+ world)
-  ctx.fillStyle='#bfe3a6'; ctx.beginPath(); ctx.moveTo(0,worldH); ctx.lineTo(0,worldH-50);
+  ctx.fillStyle=sky.hillA; ctx.beginPath(); ctx.moveTo(0,worldH); ctx.lineTo(0,worldH-50);
   ctx.quadraticCurveTo(W*0.25,worldH-84,W*0.5,worldH-52); ctx.quadraticCurveTo(W*0.78,worldH-20,W,worldH-58); ctx.lineTo(W,worldH); ctx.fill();
-  ctx.fillStyle='#a9d792'; ctx.beginPath(); ctx.moveTo(0,worldH); ctx.lineTo(0,worldH-26);
+  ctx.fillStyle=sky.hillB; ctx.beginPath(); ctx.moveTo(0,worldH); ctx.lineTo(0,worldH-26);
   ctx.quadraticCurveTo(W*0.4,worldH-52,W*0.7,worldH-30); ctx.quadraticCurveTo(W*0.9,worldH-14,W,worldH-34); ctx.lineTo(W,worldH); ctx.fill();
 
   drawNest();
@@ -807,6 +869,7 @@ function draw(){
     else miniLovot(e.x,e.y,0.82,e.color,'idle',e.golden,spikes);
   }
   if(boss) drawBoss();
+  for(const b of bossBullets) drawBossBullet(b);
   for(const s of powerStars) drawPowerStar(s);
   // tail followers (far first)
   for(let i=tail.length-1;i>=0;i--){ const p=tailPos(i); miniLovot(p.x,p.y,0.7,tail[i].color,'happy',tail[i].golden); }
@@ -821,7 +884,7 @@ function draw(){
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.lineWidth=4; ctx.strokeStyle='rgba(40,20,10,.55)'; ctx.strokeText(p.text,0,0);
     ctx.fillStyle=p.color; ctx.fillText(p.text,0,0);
-    if(p.text2){ const dy=p.size*0.66; ctx.font=`800 ${p.size2||Math.round(p.size*0.55)}px ui-rounded, "Hiragino Maru Gothic ProN", sans-serif`;
+    if(p.text2){ const dy=p.size*0.95; ctx.font=`800 ${p.size2||Math.round(p.size*0.55)}px ui-rounded, "Hiragino Maru Gothic ProN", sans-serif`;
       ctx.lineWidth=3; ctx.strokeText(p.text2,0,dy);
       ctx.fillStyle=p.color2||p.color; ctx.fillText(p.text2,0,dy); }
     ctx.restore(); }
@@ -837,19 +900,17 @@ function hexA(h,a){ return `rgba(${parseInt(h.slice(1,3),16)},${parseInt(h.slice
 function puff(x,y,r){ ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.arc(x+r*.9,y+r*.15,r*.8,0,7); ctx.arc(x-r*.9,y+r*.2,r*.72,0,7); ctx.arc(x+r*.2,y-r*.35,r*.7,0,7); ctx.fill(); }
 
 function drawNest(){
-  // banked pile peeking out (absolute coords)
+  // banked pile resting on top of the dock (absolute coords), spread evenly across whatever
+  // count is currently shown (dividing by the fixed slot count instead of `show` bunched
+  // everything toward one side whenever fewer than 7 were banked) — sits just above the
+  // artwork's top edge (nest.y+26-NEST_H) since NEST.png reads as a dock, not a basket
   const show=Math.min(banked,7);
-  for(let i=0;i<show;i++){ const a=(i/7)*Math.PI - Math.PI*0.05; const rx=Math.cos(a)*26, ry=-6-Math.sin(a)*10;
-    miniLovot(nest.x+rx, nest.y+ry-6, 0.5, palette[i%palette.length],'happy'); }
-  ctx.save(); ctx.translate(nest.x,nest.y);
-  // basket
-  ctx.fillStyle='#c99b63'; ctx.beginPath(); ctx.ellipse(0,6,44,20,0,0,7); ctx.fill();
-  ctx.fillStyle='#b3874f'; ctx.beginPath(); ctx.ellipse(0,2,44,15,0,Math.PI,0); ctx.fill();
-  ctx.strokeStyle='#a2793f'; ctx.lineWidth=2.4;
-  for(let i=-3;i<=3;i++){ ctx.beginPath(); ctx.moveTo(i*12,-6); ctx.lineTo(i*12,14); ctx.stroke(); }
-  ctx.beginPath(); ctx.ellipse(0,-2,44,13,0,0,Math.PI,true); ctx.stroke();
-  ctx.fillStyle='rgba(60,90,60,.55)'; ctx.font='bold 11px ui-rounded,sans-serif'; ctx.textAlign='center'; ctx.fillText('巣',0,-26);
-  ctx.restore();
+  const denom=Math.max(show-1,1);
+  for(let i=0;i<show;i++){ const a=(show===1?0.5:i/denom)*Math.PI - Math.PI*0.05; const rx=Math.cos(a)*36, ry=-6-Math.sin(a)*8;
+    miniLovot(nest.x+rx, nest.y+26-NEST_H+ry, 0.5, palette[i%palette.length],'happy'); }
+  if(sprNest.complete && sprNest.naturalWidth){
+    ctx.drawImage(sprNest, nest.x-NEST_W/2, nest.y+26-NEST_H, NEST_W, NEST_H);
+  }
 }
 
 function hoodedLovot(cover, mood, horn, hornGlow, lookX, lookY){
@@ -916,7 +977,7 @@ function drawSpikes(sides,color){
     }
   }
 }
-function miniLovot(x,y,sc,color,mood,golden,spikeSides){
+function miniLovot(x,y,sc,color,mood,golden,spikeSides,look){
   ctx.save(); ctx.translate(x,y); ctx.scale(sc,sc);
   const bob=Math.sin(L.bob+x*0.05)*2; ctx.translate(0,bob);
   if(golden){
@@ -939,7 +1000,7 @@ function miniLovot(x,y,sc,color,mood,golden,spikeSides){
   ctx.beginPath(); ctx.moveTo(0,-R*1.1); ctx.quadraticCurveTo(R*0.3,-R*1.5,R*0.28,-R*1.75); ctx.stroke();
   const bg=ctx.createRadialGradient(R*0.2,-R*1.85,2,R*0.28,-R*1.75,16); bg.addColorStop(0,'#fff'); bg.addColorStop(.3,color); bg.addColorStop(1,shade(color));
   ctx.fillStyle=bg; ctx.beginPath(); ctx.ellipse(R*0.28,-R*1.78,13,16,0,0,7); ctx.fill();
-  hoodedLovot(color, mood, false, undefined, 0, mood==='sad'?0.8:0);
+  hoodedLovot(color, mood, false, undefined, look?look[0]:0, look?look[1]:(mood==='sad'?0.8:0));
   if(spikeSides && spikeSides.length) drawSpikes(spikeSides,color);
   if(golden){
     const n=7;
@@ -957,12 +1018,18 @@ function miniLovot(x,y,sc,color,mood,golden,spikeSides){
 }
 function drawBoss(){
   // a big mini with a danger-signaling spike ring (only the top is safe) plus a flash-white
-  // hit feedback and a floating HP-pip bar so its remaining stomps are readable at a glance
+  // hit feedback and a floating HP-pip bar so its remaining stomps are readable at a glance.
+  // its eyes track the lovot's direction, and it goes semi-transparent while fleeing/descending
+  // between patrol phases (see the boss state machine in tick()).
   const sc=2.6;
-  ctx.save();
-  if(boss.flash>0){ ctx.save(); ctx.globalAlpha=boss.flash*0.55; ctx.fillStyle='#fff';
+  const ldx=L.x-boss.x, ldy=(L.y+HITCY)-boss.y, ldd=Math.hypot(ldx,ldy)||1;
+  const look=[ldx/ldd, ldy/ldd];
+  ctx.save(); ctx.globalAlpha=boss.alpha;
+  if(boss.flash>0){ ctx.save(); ctx.globalAlpha=boss.alpha*boss.flash*0.55; ctx.fillStyle='#fff';
     ctx.beginPath(); ctx.arc(boss.x,boss.y,boss.r*1.15,0,7); ctx.fill(); ctx.restore(); }
-  miniLovot(boss.x,boss.y,sc,boss.color,'idle',false,['bottom','left','right']);
+  if(boss.telegraph>0 && Math.floor(boss.telegraph*14)%2===0){ ctx.save(); ctx.globalAlpha=boss.alpha*0.6; ctx.fillStyle='#fff8d6';
+    ctx.beginPath(); ctx.arc(boss.x,boss.y,boss.r*1.05,0,7); ctx.fill(); ctx.restore(); }
+  miniLovot(boss.x,boss.y,sc,boss.color,'idle',false,['bottom','left','right'],look);
   ctx.restore();
   const pipW=14, gap=6, total=boss.maxHp*pipW+(boss.maxHp-1)*gap, startX=boss.x-total/2, py=boss.y-boss.r-26;
   for(let i=0;i<boss.maxHp;i++){
@@ -970,6 +1037,12 @@ function drawBoss(){
     ctx.strokeStyle='rgba(80,40,50,.4)'; ctx.lineWidth=1.5;
     ctx.beginPath(); ctx.arc(startX+i*(pipW+gap)+pipW/2, py, pipW/2, 0, 7); ctx.fill(); ctx.stroke();
   }
+}
+function drawBossBullet(b){
+  ctx.save(); ctx.translate(b.x,b.y);
+  const g=ctx.createRadialGradient(-2,-3,1,0,0,b.r); g.addColorStop(0,'#fff8e0'); g.addColorStop(0.5,b.color); g.addColorStop(1,shade(b.color));
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(0,0,b.r,0,7); ctx.fill();
+  ctx.restore();
 }
 function drawStarShape(cx,cy,rOuter,rInner,c1,c2){
   const g=ctx.createRadialGradient(cx-4,cy-6,2,cx,cy,rOuter);
@@ -1086,13 +1159,13 @@ function finishGame(){
 }
 function buildShareText(){
   const mm=Math.floor(elapsed/60), ss=Math.floor(elapsed%60), time=mm+':'+String(ss).padStart(2,'0');
-  if(mode==='stage') return `LOVOTバルーンで全3ステージ制覇！🎈\nスコア${score}点・納品${banked}体・タイム${time}`;
-  if(mode==='time') return `LOVOTバルーンの1分間チャレンジでスコア${score}点獲得！🎈`;
-  return `LOVOTバルーンで遊んだよ！スコア${score}点🎈`;
+  if(mode==='stage') return `LOVOTの ふわふわレスキューで全3ステージ制覇！🎈\nスコア${score}点・納品${banked}体・タイム${time}`;
+  if(mode==='time') return `LOVOTの ふわふわレスキューの1分間チャレンジでスコア${score}点獲得！🎈`;
+  return `LOVOTの ふわふわレスキューで遊んだよ！スコア${score}点🎈`;
 }
 document.getElementById('r_share').addEventListener('click',()=>{
   const text=buildShareText();
-  if(navigator.share){ navigator.share({title:'LOVOTバルーン',text,url:location.href}).catch(()=>{}); return; }
+  if(navigator.share){ navigator.share({title:'LOVOTの ふわふわレスキュー',text,url:location.href}).catch(()=>{}); return; }
   const url='https://twitter.com/intent/tweet?text='+encodeURIComponent(text)+'&url='+encodeURIComponent(location.href);
   window.open(url,'_blank','noopener');
 });
