@@ -27,7 +27,8 @@
   #hud .score { font-size:40px; font-weight:800; letter-spacing:.01em; line-height:1;
     color:var(--coral-dk); text-shadow:0 1px 0 rgba(255,255,255,.6); }
   #hud .score small { font-size:15px; font-weight:700; opacity:.75; }
-  #hud .carry { margin-top:6px; font-size:14px; font-weight:700; color:#c8863c;
+  #hud .carry { margin-top:6px; font-size:14px; font-weight:700; color:#c8863c; line-height:1.45;
+    white-space:pre-line; /* the carry readout is two lines: what you hold, and the next step */
     text-shadow:0 1px 0 rgba(255,255,255,.6); }
   #hud .modeStat { margin-top:4px; font-size:15px; font-weight:800; color:var(--coral-dk);
     text-shadow:0 1px 0 rgba(255,255,255,.6); }
@@ -149,10 +150,12 @@
       <div class="head">あそびかた</div>
       ・左右をタップしてパタパタ羽ばたこう<br>
       ・ちびラボットを上から踏んで仲間にしよう<br>
-      ・巣まで連れて帰って納品！<br>
+      ・巣まで連れて帰って納品！1体につき1点<br>
+      ・<b>3体まとめて納品で +10ボーナス</b>。6体で+20、9体で+40…<br>
+      ・✨金色のミニは、納品すると1体につき +100<br>
       ・トゲの部分にぶつかるとダメージ<br>
       ・ゲームパッド接続時は十字キー左右で傾き、Aボタンで羽ばたき(モード選択では上下で選択、Aで決定)
-      <div class="tease">💡 一度にたくさんのちびラボットを集めて巣に返すとボーナス…!?</div>
+      <div class="tease">💡 欲張るほど大きく稼げる。でもトゲに当たると仲間は散らばる…!</div>
     </div>
     <div class="modes">
       <button class="modeBtn" data-mode="practice">
@@ -248,12 +251,19 @@ const TIME_LIMIT=60;
 // the third replaces the quota with a multi-hit boss (see spawnBoss/defeatBoss below).
 const STAGE_TARGETS=[8,14], STAGE_SPIKE=[0,0.25,0.4], STAGE_SPEED=[0.85,1,1.2];
 const BOSS_HITS=4, BOSS_REWARD=10, BOSS_HOVER_DUR=2;
+const FANFARE_HOLD=3.5; // seconds the BGM stays out of the way for the boss-defeat crowd cheer (~4.8s file)
 const ENEMY_SPAWN_GRACE=1.5; // seconds a freshly (re)spawned mini is see-through and can't be touched
+const GOLDEN_RATE=0.04;      // chance any spawning mini is the rare golden one (worth GOLDEN_BONUS)
 const INVINCIBLE_DUR=8, STAR_MIN=15, STAR_MAX=25; // invincibility star: duration, and its spawn-interval range
 // phase 'splash' = key-art title screen, 'title' = mode select (the screen behind the splash)
 let mode='practice', phase='splash', elapsed=0, timeLeft=TIME_LIMIT;
 let countdownSec=null, countdownPulse=0;
 let stageNum=1, boss=null, bossPhase='none'; // bossPhase: 'none' | 'fighting' | 'defeated'
+// `banked` is the run-total and never resets; stage progress is measured against this baseline, the
+// total as of when the current stage began. A quota is reached mid-batch but the stage only flips
+// once the whole flock has landed, so `banked` routinely overshoots the target — measuring from a
+// fixed threshold instead carried that overshoot into the next stage's counter and quota.
+let stageBase=0;
 let pendingAdvance=null, advanceTimer=-1; // stage advance waits for the delivery flight to finish,
   // then holds a quiet ADVANCE_PAUSE beat before the next stage actually reveals itself
 const ADVANCE_PAUSE=3;
@@ -289,7 +299,7 @@ function updateWorldHeight(){
     // and a proper population spread through the newly revealed upper screen, so both screens
     // feel busy right away instead of slowly trickling in via one-for-one respawns — kept well
     // clear of the world's hard ceiling so there's always room to stomp them from above
-    for(let i=0;i<8;i++){ const side=Math.random()<0.5?-1:1, golden=Math.random()<0.08;
+    for(let i=0;i<8;i++){ const side=Math.random()<0.5?-1:1, golden=Math.random()<GOLDEN_RATE;
       enemies.push({ x: side<0? GX+40: GX+GW-40, y: 150+Math.random()*((worldH-H)-200),
         vx: side*(24+Math.random()*26), vy:0, bob:Math.random()*7, r:17,
         color: golden?'#ffd700':palette[(Math.random()*palette.length)|0], golden, kind:Math.random()<0.25?'spike':'normal',
@@ -297,7 +307,7 @@ function updateWorldHeight(){
       if(golden) SFX.shine(); }
     // and a population around ground level too — the player lands right back at the nest for
     // stage 2, so the screen they're actually looking at needs company, not just the reveal above
-    for(let i=0;i<6;i++){ const side=Math.random()<0.5?-1:1, golden=Math.random()<0.08;
+    for(let i=0;i<6;i++){ const side=Math.random()<0.5?-1:1, golden=Math.random()<GOLDEN_RATE;
       enemies.push({ x: side<0? GX+40: GX+GW-40, y: (worldH-H)+120+Math.random()*(H-240),
         vx: side*(24+Math.random()*26), vy:0, bob:Math.random()*7, r:17,
         color: golden?'#ffd700':palette[(Math.random()*palette.length)|0], golden, kind:Math.random()<0.25?'spike':'normal',
@@ -381,19 +391,17 @@ const SFX=(()=>{
     sparkle:  ()=>{ tone(null,1046,0.1,'sine',0.12); tone(null,1318,0.1,'sine',0.12,null,0.07);
       tone(null,1568,0.14,'sine',0.13,null,0.14); tone(null,2093,0.18,'sine',0.12,null,0.21); },
     shine:    ()=>{ tone(null,1568,0.12,'sine',0.14); tone(null,2093,0.16,'sine',0.13,null,0.09); },
-    power:    ()=>{ tone(null,660,0.1,'square',0.14); tone(null,880,0.1,'square',0.14,null,0.08);
-      tone(null,1320,0.22,'square',0.16,null,0.16); },
     fanfare:  ()=>{ tone(null,784,0.14,'square',0.15); tone(null,988,0.14,'square',0.15,null,0.1);
       tone(null,1175,0.26,'square',0.17,null,0.2); },
     bossShot: ()=>tone(null,240,0.16,'sawtooth',0.16,700),
   };
   // voice-tracked file cues (retriggered rapidly, same as their synth counterparts above) vs.
-  // one-shot layered cues (deliver/miss/sparkle/shine/power/fanfare) that are fine to overlap.
+  // one-shot layered cues (deliver/miss/sparkle/shine/fanfare) that are fine to overlap.
   const VOICED=new Set(['flap','befriend','recollect','hit','pop']);
   const files={ flap:'assets/sounds/flap.mp3', befriend:'assets/sounds/befriend.wav',
     recollect:'assets/sounds/recollect.mp3', hit:'assets/sounds/hit.wav', deliver:'assets/sounds/deliver.wav',
     pop:'assets/sounds/風船割れる.mp3', miss:'assets/sounds/one_miss.wav', sparkle:'assets/sounds/きらきら輝く3.mp3',
-    shine:'assets/sounds/可愛く輝く1.mp3', power:'assets/sounds/star.mp3', fanfare:'assets/sounds/スタジアムの歓声.mp3',
+    shine:'assets/sounds/可愛く輝く1.mp3', fanfare:'assets/sounds/スタジアムの歓声.mp3',
     bossShot:'assets/sounds/boss_shot.mp3' };
   // decode every file up front into an AudioBuffer: playback is then a plain AudioBufferSourceNode
   // (sample-accurate, no per-play seek/decode latency) instead of re-seeking a shared <audio>
@@ -401,19 +409,42 @@ const SFX=(()=>{
   // while a big flock banks in) and made cues feel increasingly delayed over a long session.
   const buf={};
   for(const name in files){
-    fetch(files[name]).then(r=>r.ok?r.arrayBuffer():Promise.reject())
-      .then(ab=>ac.decodeAudioData(ab)).then(decoded=>{ buf[name]=decoded; }).catch(()=>{});
+    fetch(files[name]).then(r=>r.ok?r.arrayBuffer():Promise.reject(r.status))
+      .then(ab=>ac.decodeAudioData(ab)).then(decoded=>{ buf[name]=decoded; })
+      // a failed load silently falls back to the synth tone, which sounds plausible enough that a
+      // missing or undecodable file can go unnoticed — say so in the console instead
+      .catch(e=>console.warn(`[sfx] "${name}" fell back to the synth tone: ${files[name]} (${e})`));
   }
+  // per-cue playback gain; anything not listed uses CUE_GAIN. The boss fanfare is a diffuse crowd
+  // cheer rather than a peaky one-shot, so at the shared 0.6 it measured loud but read as background
+  // noise under the resumed BGM and the delivery cues firing alongside it.
+  const CUE_GAIN=0.6, GAIN={ fanfare:1.0 };
   function playBuffer(name){
     const a=ensure(), voice=VOICED.has(name)?name:null;
     if(voice) cutVoice(voice,a);
     const src=a.createBufferSource(), g=a.createGain();
     src.buffer=buf[name];
-    g.gain.setValueAtTime(0,a.currentTime); g.gain.linearRampToValueAtTime(0.6,a.currentTime+0.005);
+    const vol=GAIN[name]||CUE_GAIN;
+    g.gain.setValueAtTime(0,a.currentTime); g.gain.linearRampToValueAtTime(vol,a.currentTime+0.005);
     src.connect(g); g.connect(a.destination); src.start();
     if(voice){ active[voice]={osc:src,gain:g.gain}; src.onended=()=>{ if(active[voice]&&active[voice].osc===src) delete active[voice]; }; }
   }
-  function play(name){ if(buf[name]) playBuffer(name); else synth[name](); }
+  // decodeAudioData needs fetch(), and fetch is blocked outright when the page is opened straight
+  // off disk (file://) — every cue would silently degrade to its synth tone, which is exactly the
+  // failure mode that's hard to hear: the beeps sound "fine" while the actual recordings never
+  // play. A plain <audio> element has no such restriction, so try that before giving up.
+  const elCache={};
+  function playElement(name){
+    if(!files[name]) return false;
+    let a=elCache[name];
+    if(!a){ a=elCache[name]=new Audio(files[name]); a.preload='auto'; }
+    const c=a.cloneNode();
+    c.volume=Math.min(1, GAIN[name]||CUE_GAIN);
+    c.addEventListener('error',()=>{ try{ synth[name](); }catch(e){} }); // file really is missing
+    const p=c.play(); if(p) p.catch(()=>{});
+    return true;
+  }
+  function play(name){ if(buf[name]) playBuffer(name); else if(!playElement(name)) synth[name](); }
   const api={}; for(const name in synth) api[name]=()=>play(name);
   return api;
 })();
@@ -422,24 +453,33 @@ const SFX=(()=>{
 // Plays the whole bgm/ library as a shuffled playlist: order is reshuffled each time it's
 // exhausted, and each track auto-advances to the next when it ends (no per-track looping).
 const BGM=(()=>{
-  const TRACKS=[
-    'assets/sounds/bgm/ふわふわの空.mp3', 'assets/sounds/bgm/ふわふわの空_2.mp3', 'assets/sounds/bgm/ふわふわの空_3.mp3',
-    'assets/sounds/bgm/Pixel Parade.mp3', 'assets/sounds/bgm/Pixel Parade_2.mp3', 'assets/sounds/bgm/Pixel Parade_3.mp3',
+  // Stage mode gives each stage its own family of tracks, so clearing one audibly moves you on —
+  // the same escalation the sky palette already does (day -> dusk -> twilight). Stage 3 has no pool
+  // of its own on purpose: spawnBoss() takes the element over with its own override track.
+  const STAGE_POOLS=[
+    ['assets/sounds/bgm/ふわふわの空.mp3', 'assets/sounds/bgm/ふわふわの空_2.mp3', 'assets/sounds/bgm/ふわふわの空_3.mp3'],
+    ['assets/sounds/bgm/Pixel Parade.mp3', 'assets/sounds/bgm/Pixel Parade_2.mp3', 'assets/sounds/bgm/Pixel Parade_3.mp3'],
   ];
+  // practice/time never leave stage 1, so pinning them to one family would cut their library in
+  // half — they keep shuffling everything, which is what they did before stages had pools.
+  const ALL_TRACKS=[].concat(...STAGE_POOLS);
   function shuffle(arr){ const a=arr.slice();
     for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]]; }
     return a; }
-  let order=shuffle(TRACKS), idx=0;
+  // one knob for every music track (playlist, title, and any override): was 0.35, taken to 80% of
+  // that so the sfx cut through — the music was drowning them, the boss fanfare especially.
+  const BGM_VOL=0.28;
+  let pool=ALL_TRACKS, order=shuffle(pool), idx=0;
   let muted=localStorage.getItem('lovot_bgm_muted')==='1', started=false;
-  const el=new Audio(); el.volume=0.35; el.src=order[idx];
+  const el=new Audio(); el.volume=BGM_VOL; el.src=order[idx];
   el.addEventListener('ended',()=>{
     if(overrideActive) return; // looping override track never fires 'ended'; guard anyway
-    idx++; if(idx>=order.length){ order=shuffle(TRACKS); idx=0; }
+    idx++; if(idx>=order.length){ order=shuffle(pool); idx=0; }
     el.src=order[idx]; if(!muted) el.play().catch(()=>{});
   });
   // the splash / mode-select screens get their own looping track instead of the shuffled playlist
   const titleEl=new Audio('assets/sounds/bgm/title.mp3');
-  titleEl.loop=true; titleEl.volume=0.35; titleEl.preload='auto';
+  titleEl.loop=true; titleEl.volume=BGM_VOL; titleEl.preload='auto';
   let titleActive=false;
   // idempotent, and retried from three angles so the track comes up with the title screen rather
   // than waiting on the player: right now (below), again the moment the file is buffered, and —
@@ -452,7 +492,10 @@ const BGM=(()=>{
     titleEl.pause(); titleEl.currentTime=0; }
   const btn=document.getElementById('bgm');
   function refreshBtn(){ btn.textContent=muted?'🔇':'🔊'; }
-  function start(){ stopTitle(); if(started) return; started=true; if(!muted) el.play().catch(()=>{}); }
+  // `started` marks that gameplay music has been armed at least once, but the early-return used to
+  // sit before the play() call — so going back to the title (which pauses `el`) and starting again
+  // left the playlist paused for the whole next run. Resume whenever it isn't already running.
+  function start(){ stopTitle(); started=true; if(!muted && el.paused) el.play().catch(()=>{}); }
   btn.addEventListener('click',()=>{
     muted=!muted; localStorage.setItem('lovot_bgm_muted',muted?'1':'0');
     if(muted){ el.pause(); titleEl.pause(); }
@@ -470,14 +513,51 @@ const BGM=(()=>{
     el.loop=true; el.src=src; el.currentTime=0;
     if(!muted && started) el.play().catch(()=>{});
   }
-  function endOverride(){
+  // `hold` (seconds) leaves the music silent for a beat after the swap ends — the boss-defeat
+  // cheer is a diffuse crowd recording that the playlist resuming underneath it swallows whole.
+  let holdTimer=-1;
+  function endOverride(hold){
     if(!overrideActive) return;
     overrideActive=false; el.loop=false;
-    el.src=savedSrc; el.currentTime=savedTime;
-    if(!muted && started) el.play().catch(()=>{});
+    el.pause(); el.src=savedSrc; el.currentTime=savedTime;
+    clearTimeout(holdTimer);
+    const resume=()=>{ if(!muted && started && !titleActive && !overrideActive) el.play().catch(()=>{}); };
+    if(hold>0) holdTimer=setTimeout(resume, hold*1000); else resume();
+  }
+  // Fade out, swap the track, fade back in. A hard cut mid-song lands right on top of the stage
+  // banner and reads as a glitch rather than a transition.
+  const FADE_MS=450, FADE_STEP=40;
+  let fadeIv=null;
+  function fadeSwap(src){
+    clearInterval(fadeIv);
+    let t=0, out=true;
+    fadeIv=setInterval(()=>{
+      t+=FADE_STEP;
+      if(out){
+        el.volume=BGM_VOL*Math.max(0,1-t/FADE_MS);
+        if(t>=FADE_MS){ out=false; t=0;
+          el.pause(); el.src=src; el.currentTime=0;
+          if(!muted && started && !titleActive) el.play().catch(()=>{}); }
+      } else {
+        el.volume=BGM_VOL*Math.min(1,t/FADE_MS);
+        if(t>=FADE_MS){ el.volume=BGM_VOL; clearInterval(fadeIv); fadeIv=null; }
+      }
+    }, FADE_STEP);
+  }
+  // n: 1/2 pick that stage's pool, 0 means "every track" (practice/time). Anything without a pool
+  // of its own — stage 3 — keeps whatever is playing, since the boss override is about to take it.
+  function setStage(n){
+    const next = n===0 ? ALL_TRACKS : STAGE_POOLS[n-1];
+    if(!next || next===pool) return;
+    pool=next; order=shuffle(pool); idx=0;
+    // an override owns the element right now (a star grabbed just before the stage flipped); let it
+    // finish, but point its resume target at the new stage instead of the stage that just ended
+    if(overrideActive){ savedSrc=order[idx]; savedTime=0; return; }
+    if(!started || titleActive){ el.src=order[idx]; return; } // not audible yet — just arm it
+    fadeSwap(order[idx]);
   }
   startTitle(); // the splash is already on screen at this point, so start the track with it
-  return { start, startTitle, stopTitle, playOverride, endOverride };
+  return { start, startTitle, stopTitle, playOverride, endOverride, setStage };
 })();
 // Safety net for browsers that hard-block autoplay until the page has seen a user gesture (mobile
 // Safari/Chrome): retry on the first tap/keypress anywhere. Where autoplay is allowed the track is
@@ -489,7 +569,9 @@ const BGM=(()=>{
 // a looping cue that plays for as long as an uncollected invincibility star is sitting on the
 // field (separate from BGM.playOverride, which only kicks in once the star is actually picked up).
 const StarAmbient=(()=>{
-  const el=new Audio('assets/sounds/Onoma-Sparkle11-1(Mid).mp3'); el.loop=true; el.volume=0.5;
+  // 0.6 to sit level with the other sfx (SFX's CUE_GAIN) rather than under them — it's a sound
+  // effect, not music, so it doesn't follow BGM_VOL
+  const el=new Audio('assets/sounds/Onoma-Sparkle11-1(Mid).mp3'); el.loop=true; el.volume=0.6;
   let playing=false;
   function set(active){ if(active===playing) return; playing=active;
     if(active) el.play().catch(()=>{}); else { el.pause(); el.currentTime=0; } }
@@ -500,7 +582,7 @@ function resetAll(){ L.x=GX+GW*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.
   tail.length=0; loose.length=0; enemies.length=0; hist.length=0; score=0; banked=0;
   delivering.length=0; popups.length=0; elapsed=0; timeLeft=TIME_LIMIT;
   countdownSec=null; countdownPulse=0;
-  stageNum=1; boss=null; bossPhase='none'; camY=0; bossBullets.length=0;
+  stageNum=1; stageBase=0; boss=null; bossPhase='none'; camY=0; bossBullets.length=0;
   pendingAdvance=null; advanceTimer=-1; pendingFinish=false; finishTimer=-1;
   powerStars.length=0; invincible=0; nextStarAt=STAR_MIN+Math.random()*(STAR_MAX-STAR_MIN);
   BGM.endOverride(); StarAmbient.set(false);
@@ -511,7 +593,7 @@ function respawnLovot(){ L.x=nest.x; L.y=nest.y-120; L.vx=0; L.vy=0; L.balloons=
 function spawnEnemy(){
   if(mode==='stage' && stageNum===3) return; // no fodder minis during the boss fight
   const side=Math.random()<0.5?-1:1;
-  const golden=Math.random()<0.08;   // rare golden mini: sparkly, worth 10x when delivered
+  const golden=Math.random()<GOLDEN_RATE;   // rare golden mini: sparkly, doubles the delivery bonus
   const spikeChance=mode==='stage' ? STAGE_SPIKE[stageNum-1] : 0.25;
   const speedMul=mode==='stage' ? STAGE_SPEED[stageNum-1] : 1;
   const kind=Math.random()<spikeChance?'spike':'normal';
@@ -614,7 +696,9 @@ const clouds=[]; for(let i=0;i<6;i++) clouds.push({x:Math.random()*W,y:Math.rand
 
 function addPuff(x,y,c){ puffs.push({x,y,r:6,c,a:1}); }
 function befriend(e){ tail.push({color:e.color,golden:e.golden}); L.vy=-280; L.squash=0.5; addPuff(e.x,e.y,e.color); SFX.befriend();
-  const i=enemies.indexOf(e); if(i>=0) enemies.splice(i,1); spawnEnemy(); }
+  const i=enemies.indexOf(e); if(i>=0) enemies.splice(i,1); spawnEnemy();
+  if(e.golden) announceGolden();
+  announceTailTier(); }
 function scatterTail(){ // sonic-style: whole tail drops & scatters, recoverable
   for(let i=0;i<tail.length;i++){ const p=tailPos(i);
     loose.push({ x:p.x, y:p.y, vx:(Math.random()-0.5)*260, vy:-120-Math.random()*140,
@@ -632,26 +716,49 @@ function tailPos(i){ const idx=Math.min((i+1)*SP, hist.length-1); return hist[id
 // Every mini banked is worth 1 flat point; the interesting money is the batch bonus, which only
 // counts complete groups of BONUS_STEP in a *single* delivery and doubles with each group:
 // 3 minis +10, 6 +20, 9 +40, 12 +80 … Cashing in early is always the worse deal, which is the
-// whole point — the tail you're carrying is the bet. Each golden mini in the batch doubles the
-// bonus again, so a golden on its own is nearly worthless: it only pays if you keep collecting.
-const BONUS_STEP=3, BONUS_BASE=10;
+// whole point — the tail you're carrying is the bet. A golden mini adds a flat GOLDEN_BONUS on
+// top (it used to multiply the whole thing, which ran away far too fast at 9+ minis).
+const BONUS_STEP=3, BONUS_BASE=10, GOLDEN_BONUS=100;
 function countGolden(list){ let n=0; for(const t of list) if(t.golden) n++; return n; }
-function deliveryBonus(n, goldens){
-  const tier=Math.floor(n/BONUS_STEP);
-  if(tier<1) return 0;
-  return BONUS_BASE * Math.pow(2, tier-1) * Math.pow(2, goldens||0);
+function tierBonus(n){ const t=Math.floor(n/BONUS_STEP); return t<1 ? 0 : BONUS_BASE*Math.pow(2,t-1); }
+function deliveryBonus(n, goldens){ return tierBonus(n) + (goldens||0)*GOLDEN_BONUS; }
+// Both catch banners live in fixed lanes above the lovot and only one of each may be on screen:
+// grabbing a second golden while the first banner is still floating used to stack two identical
+// messages, and the golden/tier banners fired on the same catch used to land on top of each other.
+function pushTagged(tag,p){
+  for(let i=popups.length-1;i>=0;i--) if(popups[i].tag===tag) popups.splice(i,1);
+  p.tag=tag; popups.push(p);
+}
+function popupX(){ return Math.min(Math.max(L.x, GX+100), GX+GW-100); }
+// upper lane, single line — a golden pays a flat GOLDEN_BONUS when it's banked, and that's the
+// whole rule, so it fits on one line and never needs a second one
+function announceGolden(){
+  pushTagged('golden',{x:popupX(), y:Math.max(L.y-116, camY+46), text:'✨ 金色ゲット！ 納品で +'+GOLDEN_BONUS,
+    color:'#ffd700', size:24, life:1.6, life0:1.6, vy:-34, bounce:true});
+  SFX.sparkle();
+}
+// lower lane: the moment the tail crosses a bonus step, say so next to the lovot. The bonus is
+// otherwise invisible until it's banked, and the player's eyes are on the flock, not the HUD.
+function announceTailTier(){
+  const n=tail.length;
+  if(n<BONUS_STEP || n%BONUS_STEP!==0) return;
+  pushTagged('tier',{x:popupX(), y:Math.max(L.y-58, camY+64), text:n+'体ボーナス！',
+    text2:'いま納品で ボーナス +'+deliveryBonus(n,countGolden(tail)),
+    color:'#ffd27a', color2:'#fff3da', size:30, size2:17, life:1.8, life0:1.8, vy:-30, bounce:true});
+  SFX.shine();
 }
 function finishBatch(b){
   score+=b.bonus;
-  const tier=Math.floor(b.count/BONUS_STEP)*BONUS_STEP;
-  const sub = b.bonus>0
-    ? tier+'体ボーナス +'+b.bonus+(b.goldens>0 ? '  ✨×'+Math.pow(2,b.goldens) : '')
+  const tier=Math.floor(b.count/BONUS_STEP)*BONUS_STEP, tb=tierBonus(b.count);
+  const parts=[];
+  if(tb>0) parts.push(tier+'体ボーナス +'+tb);
+  if(b.goldens>0) parts.push('✨×'+b.goldens+' +'+(b.goldens*GOLDEN_BONUS));
+  const sub = parts.length ? parts.join('   ')
     : 'あと'+(BONUS_STEP-b.count)+'体 まとめて とどけると +'+BONUS_BASE+'！';
   popups.push({x:nest.x,y:nest.y-50,text:b.count+'体 とどけた！',text2:sub,
     color:'#ffd27a',color2:b.bonus>0?'#fff3da':'#ffd9a0',size:32,size2:19,life:2.4,life0:2.4,vy:-28,bounce:true});
   for(let k=0;k<12;k++) addPuff(nest.x+(Math.random()-0.5)*46, nest.y-10+(Math.random()-0.5)*22, palette[(Math.random()*palette.length)|0]);
-  SFX.deliver();
-  if(b.goldens>0) setTimeout(()=>SFX.sparkle(), 350);
+  SFX.deliver(); // the golden cue already fired as each one landed, so no sparkle here
 }
 
 // ---------- stage-clear boss (stage 3) ----------
@@ -668,28 +775,36 @@ function spawnBoss(){
   const baseY=camY+H*0.3;
   boss={ x:GX+GW*0.5, y:baseY, baseY, dir:Math.random()<0.5?-1:1, r:BOSS_R, hp:BOSS_HITS, maxHp:BOSS_HITS,
     iframe:0, flash:0, t:Math.random()*10, color:palette[(Math.random()*palette.length)|0],
-    state:'patrol', stateT:0, alpha:1, throwCooldown:1.6, telegraph:0 };
+    state:'patrol', stateT:0, alpha:1, throwCooldown:1.6, telegraph:0, volleyLeft:0, volleyTimer:0 };
   bossPhase='fighting';
   BGM.playOverride('assets/sounds/bgm/BOSS_BATTLE.mp3');
 }
 function defeatBoss(){
   const bx=boss.x, by=boss.y, n=BOSS_REWARD;
-  const batch={remaining:n, total:0, hasGolden:false, count:n};
+  // the boss drops a full flock at once, scored as one delivery like any other batch
+  const batch={remaining:n, count:n, goldens:0, bonus:deliveryBonus(n,0)};
   for(let i=0;i<n;i++){ const ang=(i/n)*Math.PI*2, sx=bx+Math.cos(ang)*14, sy=by+Math.sin(ang)*14;
-    const pts=i+1; batch.total+=pts;
-    delivering.push({x:sx,y:sy,sx,sy,color:palette[i%palette.length],golden:false,pts,delay:i*0.08,t:0,prog:0,batch}); }
+    delivering.push({x:sx,y:sy,sx,sy,color:palette[i%palette.length],golden:false,pts:1,delay:i*0.08,t:0,prog:0,batch}); }
   for(let k=0;k<18;k++) addPuff(bx+(Math.random()-0.5)*70, by+(Math.random()-0.5)*70, palette[(Math.random()*palette.length)|0]);
   popups.push({x:bx,y:by-boss.r-24,text:'ボス撃破！',color:'#ff9db0',size:32,life:1.4,life0:1.4,vy:-30,bounce:true});
   SFX.deliver(); SFX.fanfare();
   bossBullets.length=0;
   boss=null; bossPhase='defeated';
-  BGM.endOverride();
+  BGM.endOverride(FANFARE_HOLD); // let the crowd have the room to itself
 }
 // boss patterns, keyed by remaining HP: 1=default patrol, 2=faster patrol, 3=stationary blink+throw,
 // 4=fast patrol while also throwing
 function bossPattern(){ if(boss.hp>=4) return 1; if(boss.hp===3) return 2; if(boss.hp===2) return 3; return 4; }
-function throwBossBullet(){
-  bossBullets.push({ x:boss.x, y:boss.y-boss.r*0.6, vx:(Math.random()-0.5)*170, vy:-430-Math.random()*70,
+// one volley = BOSS_VOLLEY shots flung out back-to-back, then a flat BOSS_REST of quiet before
+// the next one — the tell (boss.telegraph) runs inside the tail end of that rest, so the gap
+// between volleys really is BOSS_REST seconds.
+const BOSS_VOLLEY=6, BOSS_VOLLEY_GAP=0.08, BOSS_REST=3, BOSS_TELE=0.55;
+function throwBossBullet(i){
+  // fan the volley out across the arc instead of re-rolling randomly each shot, so six of them
+  // read as one spread to weave through rather than six unrelated lobs
+  const spread=(i+0.5)/BOSS_VOLLEY*2-1;              // -1 … +1 across the volley
+  bossBullets.push({ x:boss.x, y:boss.y-boss.r*0.6,
+    vx:spread*210+(Math.random()-0.5)*40, vy:-430-Math.random()*70,
     r:9, color:boss.color, life:4 });
   SFX.bossShot();
 }
@@ -697,12 +812,15 @@ function checkStageAdvance(){
   if(mode!=='stage' || pendingAdvance) return;
   // just flag the advance here — the actual stage change waits until every mini from this
   // delivery has finished flying home (see the pendingAdvance handling in tick())
-  if(stageNum===1 && banked>=STAGE_TARGETS[0]){ pendingAdvance=2; advanceTimer=-1; }
-  else if(stageNum===2 && banked>=STAGE_TARGETS[0]+STAGE_TARGETS[1]){ pendingAdvance=3; advanceTimer=-1; }
+  if(stageNum<3 && banked-stageBase>=STAGE_TARGETS[stageNum-1]){ pendingAdvance=stageNum+1; advanceTimer=-1; }
 }
 function runStageAdvance(){
+  // rebase here, not when the quota was hit: everything that landed in the meantime belongs to the
+  // stage that just ended, so the new stage's counter starts at a true 0
+  stageBase=banked;
   if(pendingAdvance===2){ stageNum=2; updateWorldHeight(); announceStage('ステージ2 とうじょう！', STAGE_TARGETS[1]+'体のミニを帰巣させよう'); }
   else if(pendingAdvance===3){ stageNum=3; announceStage('ボス とうじょう！','たくさん踏みつけて倒そう！'); spawnBoss(); }
+  BGM.setStage(stageNum); // after spawnBoss, so stage 3 leaves the boss override in charge
   pendingAdvance=null; advanceTimer=-1;
 }
 
@@ -753,9 +871,19 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
       if(moving){ boss.x+=boss.dir*speed*dt;
         if(boss.x<GX+80){boss.x=GX+80; boss.dir=1;} if(boss.x>GX+GW-80){boss.x=GX+GW-80; boss.dir=-1;} }
       boss.y=boss.baseY+Math.sin(boss.t*1.1)*22;
-      if(pat>=3){ // patterns 3 & 4 lob a bullet on a telegraphed cycle
-        if(boss.telegraph>0){ boss.telegraph-=dt; if(boss.telegraph<=0){ throwBossBullet(); boss.throwCooldown=2.0; } }
-        else { boss.throwCooldown-=dt; if(boss.throwCooldown<=0) boss.telegraph=0.55; }
+      if(pat>=3){ // patterns 3 & 4 fire telegraphed volleys of 6, then rest
+        if(boss.volleyLeft>0){
+          boss.volleyTimer-=dt;
+          if(boss.volleyTimer<=0){
+            throwBossBullet(BOSS_VOLLEY-boss.volleyLeft);
+            boss.volleyLeft--; boss.volleyTimer=BOSS_VOLLEY_GAP;
+            if(boss.volleyLeft<=0) boss.throwCooldown=BOSS_REST;
+          }
+        } else {
+          boss.throwCooldown-=dt;
+          boss.telegraph = boss.throwCooldown<=BOSS_TELE ? Math.max(0,boss.throwCooldown) : 0;
+          if(boss.throwCooldown<=0){ boss.volleyLeft=BOSS_VOLLEY; boss.volleyTimer=0; boss.telegraph=0; }
+        }
       }
     } else if(boss.state==='flee'){
       boss.stateT+=dt; const dur=0.55, t=Math.min(1,boss.stateT/dur), e=1-(1-t)*(1-t);
@@ -770,7 +898,8 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
       boss.stateT+=dt; const dur=0.7, t=Math.min(1,boss.stateT/dur), e=1-(1-t)*(1-t);
       boss.alpha=0.4+0.6*e; boss.x=GX+GW*0.5; boss.y=boss.fleeToY+(boss.baseY-boss.fleeToY)*e;
       if(t>=1){ boss.state='patrol'; boss.stateT=0; boss.alpha=1; boss.x=GX+GW*0.5; boss.y=boss.baseY;
-        boss.dir=Math.random()<0.5?-1:1; boss.iframe=0.3; boss.throwCooldown=1.6; boss.telegraph=0; }
+        boss.dir=Math.random()<0.5?-1:1; boss.iframe=0.3; boss.throwCooldown=1.6; boss.telegraph=0;
+        boss.volleyLeft=0; boss.volleyTimer=0; }
     }
     if(boss.iframe>0) boss.iframe-=dt;
     boss.flash=Math.max(0,boss.flash-dt*3);
@@ -838,7 +967,8 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   for(let i=powerStars.length-1;i>=0;i--){ const s=powerStars[i]; s.t+=dt; s.life-=dt;
     if(Math.hypot(L.x-s.x, hcy-s.y) < hitR+20){
       powerStars.splice(i,1); invincible=INVINCIBLE_DUR;
-      addPuff(s.x,s.y,'#fff6c8'); SFX.power(); BGM.playOverride('assets/sounds/bgm/Star Collecting Loop.mp3');
+      // no pickup cue: the dedicated star BGM starting is the announcement
+      addPuff(s.x,s.y,'#fff6c8'); BGM.playOverride('assets/sounds/bgm/Star Collecting Loop.mp3');
       continue;
     }
     if(s.life<=0){ powerStars.splice(i,1); nextStarAt=elapsed+STAR_MIN+Math.random()*(STAR_MAX-STAR_MIN); }
@@ -854,7 +984,9 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     o.x+=o.vx*dt; o.y+=o.vy*dt;
     const lg=worldH-52; if(o.y>lg){o.y=lg; o.vy*=-0.35; o.vx*=0.6;}
     if(o.x<GX+20)o.x=GX+20; if(o.x>GX+GW-20)o.x=GX+GW-20;
-    if(o.arm<=0 && Math.hypot(L.x-o.x,hcy-o.y) < hitR+16){ tail.push({color:o.color,golden:o.golden}); loose.splice(i,1); addPuff(o.x,o.y,o.color); SFX.recollect(); continue; }
+    if(o.arm<=0 && Math.hypot(L.x-o.x,hcy-o.y) < hitR+16){ tail.push({color:o.color,golden:o.golden}); loose.splice(i,1); addPuff(o.x,o.y,o.color); SFX.recollect();
+      if(o.golden) announceGolden();
+      announceTailTier(); continue; }
     if(o.life<=0){ loose.splice(i,1); }
   }
 
@@ -879,7 +1011,11 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
       score+=d.pts; banked++; checkStageAdvance(); addPuff(nest.x,nest.y-10,d.color); SFX.recollect();
       popups.push({x:nest.x+(Math.random()-0.5)*24,y:nest.y-34,text:(d.golden?'✨+':'+')+d.pts,
         color:d.golden?'#ffd700':'#fff3da',size:d.golden?30:22,life:0.6,life0:0.6,vy:-46});
-      if(d.golden) for(let k=0;k<6;k++) addPuff(nest.x+(Math.random()-0.5)*30, nest.y-14+(Math.random()-0.5)*16, '#ffe9a8');
+      // a golden landing gets its own cue right here. It used to only fire once the whole batch had
+      // finished (see finishBatch), which for a big flock is seconds later and under the deliver
+      // sound — so the golden's own arrival, the thing with the gold popup and puffs, was silent.
+      if(d.golden){ SFX.sparkle();
+        for(let k=0;k<6;k++) addPuff(nest.x+(Math.random()-0.5)*30, nest.y-14+(Math.random()-0.5)*16, '#ffe9a8'); }
       d.batch.remaining--;
       if(d.batch.remaining<=0) finishBatch(d.batch);
       delivering.splice(i,1);
@@ -925,7 +1061,22 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   for(const cl of clouds){ cl.x-=cl.sp*dt*3; if(cl.x<-120){cl.x=W+80;cl.y=Math.random()*worldH*0.6;} }
 
   document.getElementById('score').textContent=score;
-  document.getElementById('carry').textContent='抱えてる: '+tail.length;
+  // the carry readout doubles as the nag to keep going: it names the *bonus* on offer at the next
+  // step (not the batch total, which reads as a vaguer number), so cashing in early is a visible
+  // choice rather than an invisible loss
+  // split over two lines: the golden take is its own flat number, so hanging it off the end of the
+  // step line made one long string where neither figure stood out
+  const carry=tail.length, cGold=countGolden(tail);
+  const nextStep=carry+(BONUS_STEP-carry%BONUS_STEP);
+  const carryEl=document.getElementById('carry');
+  if(carry===0) carryEl.textContent='抱えてる: 0';
+  else{
+    const head='抱えてる: '+carry+(cGold>0 ? '  ✨'+cGold+' (+'+(cGold*GOLDEN_BONUS)+')' : '');
+    const step= carry%BONUS_STEP===0
+      ? 'いま納品で '+carry+'体ボーナス +'+tierBonus(carry)+'！'
+      : 'あと'+(nextStep-carry)+'体で '+nextStep+'体ボーナス +'+tierBonus(nextStep)+'！';
+    carryEl.textContent=head+'\n'+step;
+  }
   updateModeStat();
   document.getElementById('starBadge').textContent = invincible>0 ? '⭐ 無敵 '+Math.ceil(invincible)+'s' : '';
 
@@ -936,8 +1087,8 @@ function updateModeStat(){
   const el=document.getElementById('modeStat');
   if(mode==='stage'){
     if(stageNum<3){
-      const prevThresh=stageNum===1?0:STAGE_TARGETS[0], target=STAGE_TARGETS[stageNum-1];
-      el.textContent='ステージ'+stageNum+'  納品 '+Math.min(banked-prevThresh,target)+' / '+target+'体';
+      const target=STAGE_TARGETS[stageNum-1];
+      el.textContent='ステージ'+stageNum+'  納品 '+Math.min(banked-stageBase,target)+' / '+target+'体';
     } else {
       el.textContent=boss ? 'ボスHP '+Math.max(0,boss.hp)+' / '+boss.maxHp : 'ステージ3';
     }
@@ -1295,6 +1446,9 @@ function startGame(m){
   mode=m;
   document.getElementById('title').classList.add('hidden');
   document.getElementById('result').classList.add('hidden');
+  // pick the pool before start(): stage mode opens on stage 1's family, the other modes on the
+  // whole library. Also matters on retry, where start() is a no-op because it's already running.
+  BGM.setStage(mode==='stage'?1:0);
   resetAll(); phase='playing'; started=true; BGM.start(); setHint(true);
   updateModeStat();
   if(mode==='stage') announceStage('ステージ1 スタート！', STAGE_TARGETS[0]+'体のミニを帰巣させよう');
