@@ -68,25 +68,31 @@
   /* splash: the real title screen — key art fills the view, one button into mode select.
      The art is letterboxed (contain) rather than cropped so the logo baked into it never
      gets cut on tall phone screens; the gradient behind it picks up the artwork's sky/grass. */
-  #splash { position:fixed; inset:0; z-index:60; display:flex;
-    align-items:center; justify-content:center;
-    padding:calc(env(safe-area-inset-top) + 8px) 8px calc(env(safe-area-inset-bottom) + 8px);
+  #splash { position:fixed; inset:0; z-index:60; display:flex; overflow:hidden;
+    align-items:center; justify-content:center; padding:0;
     background:linear-gradient(180deg,#6fbfe8 0%,#a9dcf1 52%,#cfe8bd 100%); }
   #splash.hidden { display:none; }
-  /* the wrapper tracks the artwork's own box (same aspect as the png) so the button can sit
-     over the art's lower edge instead of floating in the letterbox margin */
-  #splash .artWrap { position:relative; aspect-ratio:687/1024; max-width:100%; max-height:100%;
-    filter:drop-shadow(0 10px 30px rgba(0,0,0,.25)); }
+  /* The key art is portrait (687:1024). On a phone screen that's taller than that, filling the
+     frame with `cover` would crop ~15% off each side — straight through the logo. So the art
+     stays uncropped at full width and a blurred, blown-up copy of the same file (already in
+     cache, no second download) fills the bands above and below it. */
+  #splash .bgArt { position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+    transform:scale(1.15); filter:blur(30px) saturate(1.12) brightness(1.03); }
+  /* the wrapper tracks the artwork's own box so the button can sit over the art's lower edge */
+  #splash .artWrap { position:relative; z-index:1; aspect-ratio:687/1024; max-width:100%; max-height:100%;
+    filter:drop-shadow(0 12px 34px rgba(0,0,0,.35)); }
   #splash .art { display:block; width:100%; height:100%; object-fit:contain; }
-  #splash #startBtn { position:absolute; left:50%; bottom:7%; transform:translateX(-50%);
+  /* centered with auto margins, NOT translateX(-50%): the pulse animation owns `transform`, so any
+     centering that lives there is thrown away for every frame the animation is running */
+  #splash #startBtn { position:absolute; left:0; right:0; margin:0 auto; bottom:6.5%;
     width:min(300px, 78%); height:58px; border:none; border-radius:999px;
     font-size:19px; font-weight:800; letter-spacing:.08em; cursor:pointer; color:#fff;
     background:linear-gradient(135deg, var(--coral), var(--coral-dk));
     box-shadow:0 10px 26px rgba(225,79,112,.5), 0 0 0 3px rgba(255,255,255,.55);
     animation:startPulse 1.6s ease-in-out infinite; }
   @keyframes startPulse {
-    0%,100%{ transform:translateX(-50%) scale(1); }
-    50%    { transform:translateX(-50%) scale(1.055); } }
+    0%,100%{ transform:scale(1); }
+    50%    { transform:scale(1.055); } }
   @media (prefers-reduced-motion: reduce){ #splash #startBtn { animation:none; } }
 
   #title, #result, #confirm { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center;
@@ -136,6 +142,7 @@
 <div id="stage"><canvas id="c"></canvas></div>
 
 <div id="splash">
+  <img class="bgArt" src="assets/images/タイトル画面_ロゴ除去.png" alt="" aria-hidden="true">
   <div class="artWrap">
     <img class="art" src="assets/images/タイトル画面_ロゴ除去.png" alt="LOVOTの ふわふわレスキュー">
     <button id="startBtn">スタート</button>
