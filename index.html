@@ -259,6 +259,9 @@ const TIME_LIMIT=60;
 const STAGE_TARGETS=[8,14], STAGE_SPIKE=[0,0.25,0.4], STAGE_SPEED=[0.85,1,1.2];
 const BOSS_HITS=4, BOSS_REWARD=10, BOSS_HOVER_DUR=2;
 const FANFARE_HOLD=3.5; // seconds the BGM stays out of the way for the boss-defeat crowd cheer (~4.8s file)
+// horizontal patrol speed (px/s) per boss pattern — see bossPattern(): 1 = opening drift,
+// 2 = quicker drift, 3 = stands still and throws, 4 = last hit point, a 3x panic dash
+const BOSS_PATROL_SPEED=[46, 104, 0, 312];
 const ENEMY_SPAWN_GRACE=1.5; // seconds a freshly (re)spawned mini is see-through and can't be touched
 const GOLDEN_RATE=0.04;      // chance any spawning mini is the rare golden one (worth GOLDEN_BONUS)
 const INVINCIBLE_DUR=8, STAR_MIN=15, STAR_MAX=25; // invincibility star: duration, and its spawn-interval range
@@ -891,7 +894,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   if(boss){
     boss.t+=dt;
     if(boss.state==='patrol'){
-      const pat=bossPattern(), moving=pat!==3, fast=pat===2||pat===4, speed=fast?104:46;
+      const pat=bossPattern(), speed=BOSS_PATROL_SPEED[pat-1], moving=speed>0;
       if(moving){ boss.x+=boss.dir*speed*dt;
         if(boss.x<GX+80){boss.x=GX+80; boss.dir=1;} if(boss.x>GX+GW-80){boss.x=GX+GW-80; boss.dir=-1;} }
       boss.y=boss.baseY+Math.sin(boss.t*1.1)*22;
