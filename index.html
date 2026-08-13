@@ -642,6 +642,23 @@ stage.addEventListener('pointerup',up); stage.addEventListener('pointercancel',u
 function clearInput(){ pointers.clear(); keyL=false; keyR=false; gpHoldL=false; gpHoldR=false; recompute(); }
 addEventListener('blur', clearInput);
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden) clearInput(); });
+// Stronger net for the same failure: iOS drops the odd pointerup outright (a touch that ends while
+// the system is busy with an edge swipe, the Dynamic Island, an incoming banner…), and a pointerId
+// left in the map is a wing that flaps forever — the lovot pins itself to the ceiling and no input
+// can bring it down. TouchEvent.touches is the authoritative list of fingers actually on the glass,
+// so reconcile against it: nothing down means nothing held, and more entries than fingers means
+// some pointerup went missing, so rebuild the map from the touches that are real. Running this on
+// touchstart too makes the game self-healing — one tap and a stuck wing is gone.
+function syncTouches(e){
+  const list=e.touches, n=list?list.length:0;
+  if(n===0){ if(pointers.size){ pointers.clear(); recompute(); } return; }
+  if(pointers.size>n){
+    pointers.clear();
+    for(const t of list) pointers.set('t'+t.identifier, sideOf(t.clientX));
+    recompute();
+  }
+}
+for(const ev of ['touchstart','touchend','touchcancel']) addEventListener(ev, syncTouches, {passive:true});
 
 // ---------- gamepad ----------
 // D-pad left/right steers which wing flaps (a "lean"), the A button (face button 0) is the
