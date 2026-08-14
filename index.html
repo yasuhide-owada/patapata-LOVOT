@@ -281,6 +281,11 @@ let pendingAdvance=null, advanceTimer=-1; // stage advance waits for the deliver
 const ADVANCE_PAUSE=3;
 let pendingFinish=false, finishTimer=-1; // same idea for the stage-clear result screen: wait for the
   // boss-reward delivery to land, then hold a beat so its "撃破/とどけた" banners are actually readable
+// time mode, same idea again: reaching the nest on the buzzer used to score nothing, because the
+// clock hit 0 while the flock was still flying in and finishGame() cut the whole fly-in off. Once
+// the batch exists the run is over but the counting isn't — the world freezes and only the
+// delivery keeps running, so a last-second bank is paid out in full.
+let countingOut=false;
 let invincible=0, nextStarAt=0; // invincibility star: seconds left / elapsed-time of the next spawn
 // from stage 2 onward the world grows to 2 screens tall and the camera scrolls up to follow —
 // a surprise reveal of new sky/enemies above what used to be a hard ceiling
@@ -595,7 +600,7 @@ function resetAll(){ L.x=GX+GW*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.
   delivering.length=0; popups.length=0; elapsed=0; timeLeft=TIME_LIMIT;
   countdownSec=null; countdownPulse=0;
   stageNum=1; stageBase=0; boss=null; bossPhase='none'; camY=0; bossBullets.length=0;
-  pendingAdvance=null; advanceTimer=-1; pendingFinish=false; finishTimer=-1;
+  pendingAdvance=null; advanceTimer=-1; pendingFinish=false; finishTimer=-1; countingOut=false;
   powerStars.length=0; invincible=0; nextStarAt=STAR_MIN+Math.random()*(STAR_MAX-STAR_MIN);
   BGM.endOverride(); StarAmbient.set(false);
   updateWorldHeight();
@@ -632,7 +637,9 @@ function fadeHint(){ if(!hinted && hintT>=HINT_MIN) setHint(false); }
 function flap(side){ const f=P.flap*(L.balloons>=2?1:0.82); L.wing=0.13; SPR.upTimer=0.12; SFX.flap();
   if(side==='L'){ L.vy-=f; L.vx-=P.side; L.flapPulseL=1; } else { L.vy-=f; L.vx+=P.side; L.flapPulseR=1; } }
 let started=false;
-function press(side){ if(!started||phase!=='playing')return; BGM.start(); flap(side); if(side==='L')tL=0; else tR=0; }
+// countingOut keeps phase at 'playing' so the delivery can finish, but the lovot is already out of
+// the player's hands — without this the flap cue still fired on a bird that can no longer move
+function press(side){ if(!started||phase!=='playing'||countingOut)return; BGM.start(); flap(side); if(side==='L')tL=0; else tR=0; }
 const stage=document.getElementById('stage');
 addEventListener('contextmenu',e=>e.preventDefault());
 stage.addEventListener('pointerdown',e=>{ const wl=[...pointers.values()].includes('L'), wr=[...pointers.values()].includes('R');
@@ -790,6 +797,36 @@ function finishBatch(b){
   SFX.deliver(); // the golden cue already fired as each one landed, so no sparkle here
 }
 
+// Pulled out of tick() so the time-mode count-out can keep running these two after the clock has
+// stopped and the rest of the world has frozen (see the countingOut branch in tick()).
+// delivering minis: fly one by one from wherever they were in line into the nest
+function updateDeliveries(dt){
+  for(let i=delivering.length-1;i>=0;i--){ const d=delivering[i];
+    if(d.delay>0){ d.delay-=dt; continue; }
+    d.t+=dt; const prog=Math.min(1,d.t/0.45), ease=1-(1-prog)*(1-prog); d.prog=prog;
+    d.x=d.sx+(nest.x-d.sx)*ease; d.y=d.sy+(nest.y-10-d.sy)*ease-Math.sin(prog*Math.PI)*36;
+    if(prog>=1){
+      score+=d.pts; banked++; checkStageAdvance(); addPuff(nest.x,nest.y-10,d.color); SFX.recollect();
+      popups.push({x:nest.x+(Math.random()-0.5)*24,y:nest.y-34,text:(d.golden?'✨+':'+')+d.pts,
+        color:d.golden?'#ffd700':'#fff3da',size:d.golden?30:22,life:0.6,life0:0.6,vy:-46});
+      // a golden landing gets its own cue right here. It used to only fire once the whole batch had
+      // finished (see finishBatch), which for a big flock is seconds later and under the deliver
+      // sound — so the golden's own arrival, the thing with the gold popup and puffs, was silent.
+      if(d.golden){ SFX.sparkle();
+        for(let k=0;k<6;k++) addPuff(nest.x+(Math.random()-0.5)*30, nest.y-14+(Math.random()-0.5)*16, '#ffe9a8'); }
+      d.batch.remaining--;
+      if(d.batch.remaining<=0) finishBatch(d.batch);
+      delivering.splice(i,1);
+    }
+  }
+}
+// floating score popups, then puffs
+function updateEffects(dt){
+  for(let i=popups.length-1;i>=0;i--){ const p=popups[i]; p.life-=dt; p.y+=p.vy*dt; p.vy*=Math.max(0,1-dt*1.5);
+    if(p.life<=0) popups.splice(i,1); }
+  for(let i=puffs.length-1;i>=0;i--){ const p=puffs[i]; p.r+=dt*70; p.a-=dt*2.2; if(p.a<=0)puffs.splice(i,1); }
+}
+
 // ---------- stage-clear boss (stage 3) ----------
 function announceStage(title,sub){
   popups.push({x:W*0.5,y:camY+H*0.28,text:title,text2:sub,color:'#ffd27a',color2:'#fff3da',
@@ -858,6 +895,21 @@ let last=performance.now();
 function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   pollGamepad();
   if(phase!=='playing'){ draw(); requestAnimationFrame(tick); return; }
+
+  // time's up but a delivery is still landing: the clock, the lovot, the enemies and any further
+  // collecting are all done — only the fly-in keeps updating, so every mini that made it home
+  // before the buzzer still lands, scores, and triggers its batch bonus. Once the nest is empty,
+  // hold the usual beat so the "N体 とどけた！" banner is readable before the result screen.
+  if(countingOut){
+    updateDeliveries(dt); updateEffects(dt);
+    if(delivering.length===0){
+      if(finishTimer<0) finishTimer=ADVANCE_PAUSE;
+      else { finishTimer-=dt; if(finishTimer<=0) finishGame(); }
+    }
+    document.getElementById('score').textContent=score;
+    updateModeStat();
+    draw(); requestAnimationFrame(tick); return;
+  }
 
   // control hint: readable for a beat before any input can dismiss it, and gone by HINT_MAX
   if(!hinted){ hintT+=dt; if(hintT>=HINT_MAX) setHint(false); }
@@ -1031,25 +1083,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     tail.length=0; SFX.deliver();
   }
 
-  // delivering minis: fly one by one from wherever they were in line into the nest
-  for(let i=delivering.length-1;i>=0;i--){ const d=delivering[i];
-    if(d.delay>0){ d.delay-=dt; continue; }
-    d.t+=dt; const prog=Math.min(1,d.t/0.45), ease=1-(1-prog)*(1-prog); d.prog=prog;
-    d.x=d.sx+(nest.x-d.sx)*ease; d.y=d.sy+(nest.y-10-d.sy)*ease-Math.sin(prog*Math.PI)*36;
-    if(prog>=1){
-      score+=d.pts; banked++; checkStageAdvance(); addPuff(nest.x,nest.y-10,d.color); SFX.recollect();
-      popups.push({x:nest.x+(Math.random()-0.5)*24,y:nest.y-34,text:(d.golden?'✨+':'+')+d.pts,
-        color:d.golden?'#ffd700':'#fff3da',size:d.golden?30:22,life:0.6,life0:0.6,vy:-46});
-      // a golden landing gets its own cue right here. It used to only fire once the whole batch had
-      // finished (see finishBatch), which for a big flock is seconds later and under the deliver
-      // sound — so the golden's own arrival, the thing with the gold popup and puffs, was silent.
-      if(d.golden){ SFX.sparkle();
-        for(let k=0;k<6;k++) addPuff(nest.x+(Math.random()-0.5)*30, nest.y-14+(Math.random()-0.5)*16, '#ffe9a8'); }
-      d.batch.remaining--;
-      if(d.batch.remaining<=0) finishBatch(d.batch);
-      delivering.splice(i,1);
-    }
-  }
+  updateDeliveries(dt);
 
   // stage advance: hangs back until the whole delivery has landed, then holds a quiet beat
   // before the next stage actually reveals itself (camera snap, new enemies, boss, etc.)
@@ -1064,19 +1098,16 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     timeLeft=Math.max(0,TIME_LIMIT-elapsed);
     const csec=Math.ceil(timeLeft);
     if(csec!==countdownSec){ countdownSec=csec; countdownPulse=0; } else countdownPulse+=dt;
-    if(timeLeft<=0) finishGame();
+    // a flock that reached the nest before the buzzer is already in `delivering` (the batch is
+    // built earlier in this same tick), so it's owed its points — count it out instead of ending
+    if(timeLeft<=0){ if(delivering.length>0) countingOut=true; else finishGame(); }
   }
   else if(mode==='stage' && bossPhase==='defeated' && delivering.length===0){
     if(!pendingFinish){ pendingFinish=true; finishTimer=ADVANCE_PAUSE; }
     else { finishTimer-=dt; if(finishTimer<=0) finishGame(); }
   }
 
-  // floating score popups
-  for(let i=popups.length-1;i>=0;i--){ const p=popups[i]; p.life-=dt; p.y+=p.vy*dt; p.vy*=Math.max(0,1-dt*1.5);
-    if(p.life<=0) popups.splice(i,1); }
-
-  // puffs
-  for(let i=puffs.length-1;i>=0;i--){ const p=puffs[i]; p.r+=dt*70; p.a-=dt*2.2; if(p.a<=0)puffs.splice(i,1); }
+  updateEffects(dt);
 
   // cosmetics
   L.tilt += ((-L.vx/900)-L.tilt)*Math.min(1,dt*10); L.bob+=dt*3;
