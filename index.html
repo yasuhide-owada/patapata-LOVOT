@@ -72,19 +72,21 @@
     align-items:center; justify-content:center; padding:0;
     background:linear-gradient(180deg,#6fbfe8 0%,#a9dcf1 52%,#cfe8bd 100%); }
   #splash.hidden { display:none; }
-  /* The key art is portrait (687:1024). On a phone screen that's taller than that, filling the
-     frame with `cover` would crop ~15% off each side — straight through the logo. So the art
-     stays uncropped at full width and a blurred, blown-up copy of the same file (already in
-     cache, no second download) fills the bands above and below it. */
+  /* The key art is portrait (506:1024), cut to roughly a phone screen. Filling the frame with
+     `cover` would still crop it on any device that isn't that exact ratio — straight through the
+     logo up top or the tagline at the bottom. So the art stays uncropped at full width and a
+     blurred, blown-up copy of the same file (already in cache, no second download) fills the
+     bands above and below it. */
   #splash .bgArt { position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
     transform:scale(1.15); filter:blur(30px) saturate(1.12) brightness(1.03); }
   /* the wrapper tracks the artwork's own box so the button can sit over the art's lower edge */
-  #splash .artWrap { position:relative; z-index:1; aspect-ratio:687/1024; max-width:100%; max-height:100%;
+  #splash .artWrap { position:relative; z-index:1; aspect-ratio:506/1024; max-width:100%; max-height:100%;
     filter:drop-shadow(0 12px 34px rgba(0,0,0,.35)); }
   #splash .art { display:block; width:100%; height:100%; object-fit:contain; }
   /* centered with auto margins, NOT translateX(-50%): the pulse animation owns `transform`, so any
      centering that lives there is thrown away for every frame the animation is running */
-  #splash #startBtn { position:absolute; left:0; right:0; margin:0 auto; bottom:6.5%;
+  /* sits in the clear grass below the "1人用 レスキューアクション" line baked into the art */
+  #splash #startBtn { position:absolute; left:0; right:0; margin:0 auto; bottom:3%;
     width:min(300px, 78%); height:58px; border:none; border-radius:999px;
     font-size:19px; font-weight:800; letter-spacing:.08em; cursor:pointer; color:#fff;
     background:linear-gradient(135deg, var(--coral), var(--coral-dk));
@@ -142,9 +144,9 @@
 <div id="stage"><canvas id="c"></canvas></div>
 
 <div id="splash">
-  <img class="bgArt" src="assets/images/タイトル画面_ロゴ除去.png" alt="" aria-hidden="true">
+  <img class="bgArt" src="assets/images/タイトル画面_iPhoneサイズ.jpg" alt="" aria-hidden="true">
   <div class="artWrap">
-    <img class="art" src="assets/images/タイトル画面_ロゴ除去.png" alt="LOVOTの ふわふわレスキュー">
+    <img class="art" src="assets/images/タイトル画面_iPhoneサイズ.jpg" alt="LOVOTの ふわふわレスキュー">
     <button id="startBtn">スタート</button>
   </div>
 </div>
