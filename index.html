@@ -97,10 +97,10 @@
     50%    { transform:scale(1.055); } }
   @media (prefers-reduced-motion: reduce){ #splash #startBtn { animation:none; } }
 
-  #title, #result, #confirm { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center;
+  #title, #result, #confirm, #tutorial { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center;
     padding:24px; background:rgba(20,17,22,.38); backdrop-filter:blur(2px); }
-  #title.hidden, #result.hidden, #confirm.hidden { display:none; }
-  #title .card, #result .card, #confirm .card { width:min(340px, 100%); background:var(--panel-bg); border:1px solid rgba(255,210,180,.16);
+  #title.hidden, #result.hidden, #confirm.hidden, #tutorial.hidden { display:none; }
+  #title .card, #result .card, #confirm .card, #tutorial .card { width:min(340px, 100%); background:var(--panel-bg); border:1px solid rgba(255,210,180,.16);
     border-radius:22px; padding:26px 24px 24px; color:var(--cream); box-shadow:0 20px 60px rgba(0,0,0,.45);
     text-align:center; }
   #title h1, #result h1, #confirm h1 { font-size:22px; font-weight:800; color:var(--gold); letter-spacing:.02em; margin-bottom:4px; }
@@ -127,6 +127,26 @@
   #title .modeBtn.alt { background:linear-gradient(135deg,#7ecbe0,#4a9fc0); box-shadow:0 6px 16px rgba(74,159,192,.4); }
   #title .modeBtn.alt2 { background:linear-gradient(135deg,var(--gold),#e0a53f); box-shadow:0 6px 16px rgba(224,165,63,.4); }
   #title .modeBtn.sel { outline:3px solid var(--cream); outline-offset:2px; transform:scale(1.035); }
+  #title .howtoLink { display:block; width:100%; background:none; border:none; margin:-6px 0 14px;
+    font-size:12px; font-weight:700; color:var(--gold); opacity:.75; text-decoration:underline; cursor:pointer; }
+
+  /* tutorial: first-run walkthrough, one beat per card. The whole card is tap-to-advance (first
+     tap finishes the typewriter reveal, next tap moves on) so it reads like a DQ message window;
+     #tutSkip is the only child that opts out of that bubbled click. */
+  #tutorial .card { cursor:pointer; position:relative; padding-top:34px; }
+  #tutorial .skip { position:absolute; top:14px; right:16px; background:none; border:none;
+    font-size:12px; font-weight:700; color:var(--cream); opacity:.55; cursor:pointer; }
+  #tutorial .tutArt { height:140px; display:flex; align-items:center; justify-content:center; margin-bottom:10px; }
+  #tutorial .tutArt svg { width:140px; height:140px; }
+  #tutorial .tutText { min-height:82px; font-size:15.5px; line-height:1.85; text-align:left;
+    white-space:pre-line; padding:0 2px; }
+  #tutorial .tutDots { display:flex; justify-content:center; gap:6px; margin:14px 0 16px; }
+  #tutorial .tutDots span { width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.25); transition:background .2s; }
+  #tutorial .tutDots span.on { background:var(--gold); }
+  #tutorial #tutNext { width:100%; height:48px; border:none; border-radius:999px; font-size:15px; font-weight:800;
+    letter-spacing:.02em; cursor:pointer; color:#fff; background:linear-gradient(135deg, var(--coral), var(--coral-dk));
+    box-shadow:0 8px 22px rgba(225,79,112,.5); }
+  #tutorial .tutHint { font-size:11px; opacity:.5; margin-top:9px; }
   #result .stats { display:flex; justify-content:space-around; margin:18px 0 14px; }
   #result .stat span { display:block; font-size:26px; font-weight:800; color:var(--gold); }
   #result .stat small { display:block; font-size:11px; opacity:.65; margin-top:2px; }
@@ -166,6 +186,7 @@
       ・ゲームパッド接続時は十字キー左右で傾き、Aボタンで羽ばたき(モード選択では上下で選択、Aで決定)
       <div class="tease">💡 欲張るほど大きく稼げる。でもトゲに当たると仲間は散らばる…!</div>
     </div>
+    <button class="howtoLink" id="howtoBtn">🔰 あそびかたをもう一度みる</button>
     <div class="modes">
       <button class="modeBtn" data-mode="practice">
         <span class="modeName">練習</span><span class="modeDesc">時間無制限で自由にあそぶ</span>
@@ -203,6 +224,17 @@
       <button id="c_resume">つづける</button>
       <button id="c_toTitle">モード選択へ</button>
     </div>
+  </div>
+</div>
+
+<div id="tutorial" class="hidden">
+  <div class="card" id="tutCard">
+    <button class="skip" id="tutSkip">スキップ</button>
+    <div class="tutArt" id="tutArt"></div>
+    <div class="tutText" id="tutText"></div>
+    <div class="tutDots" id="tutDots"></div>
+    <button id="tutNext">つぎへ</button>
+    <div class="tutHint">タップで先へ</div>
   </div>
 </div>
 
@@ -276,8 +308,8 @@ let stageNum=1, boss=null, bossPhase='none'; // bossPhase: 'none' | 'fighting' |
 // once the whole flock has landed, so `banked` routinely overshoots the target — measuring from a
 // fixed threshold instead carried that overshoot into the next stage's counter and quota.
 let stageBase=0;
-let pendingAdvance=null, advanceTimer=-1; // stage advance waits for the delivery flight to finish,
-  // then holds a quiet ADVANCE_PAUSE beat before the next stage actually reveals itself
+let pendingAdvance=null; // stage advance waits for the delivery flight to finish, then runs the
+  // fade cutscene below rather than switching on the spot
 const ADVANCE_PAUSE=3;
 let pendingFinish=false, finishTimer=-1; // same idea for the stage-clear result screen: wait for the
   // boss-reward delivery to land, then hold a beat so its "撃破/とどけた" banners are actually readable
@@ -286,6 +318,13 @@ let pendingFinish=false, finishTimer=-1; // same idea for the stage-clear result
 // the batch exists the run is over but the counting isn't — the world freezes and only the
 // delivery keeps running, so a last-second bank is paid out in full.
 let countingOut=false;
+// The stage advance used to land on a single frame: sky palette, world height, camera and the lovot
+// itself (updateWorldHeight repositions it and wipes the tail history) all changed at once, while
+// the player was still flying and with no warning that anything was coming. Now it's a short
+// cutscene — hold on a "クリア！" beat, fade to black, do the whole discontinuous switch while
+// nothing is visible, then fade back up already on the new stage.
+let transPhase='none', transTimer=0, stageFade=0; // 'hold'->'out'->'in'; stageFade 0=clear, 1=black
+const TRANS_HOLD=1.2, TRANS_OUT=0.45, TRANS_IN=0.7;
 let invincible=0, nextStarAt=0; // invincibility star: seconds left / elapsed-time of the next spawn
 // from stage 2 onward the world grows to 2 screens tall and the camera scrolls up to follow —
 // a surprise reveal of new sky/enemies above what used to be a hard ceiling
@@ -600,7 +639,8 @@ function resetAll(){ L.x=GX+GW*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.
   delivering.length=0; popups.length=0; elapsed=0; timeLeft=TIME_LIMIT;
   countdownSec=null; countdownPulse=0;
   stageNum=1; stageBase=0; boss=null; bossPhase='none'; camY=0; bossBullets.length=0;
-  pendingAdvance=null; advanceTimer=-1; pendingFinish=false; finishTimer=-1; countingOut=false;
+  pendingAdvance=null; pendingFinish=false; finishTimer=-1; countingOut=false;
+  transPhase='none'; transTimer=0; stageFade=0;
   powerStars.length=0; invincible=0; nextStarAt=STAR_MIN+Math.random()*(STAR_MAX-STAR_MIN);
   BGM.endOverride(); StarAmbient.set(false);
   updateWorldHeight();
@@ -639,7 +679,7 @@ function flap(side){ const f=P.flap*(L.balloons>=2?1:0.82); L.wing=0.13; SPR.upT
 let started=false;
 // countingOut keeps phase at 'playing' so the delivery can finish, but the lovot is already out of
 // the player's hands — without this the flap cue still fired on a bird that can no longer move
-function press(side){ if(!started||phase!=='playing'||countingOut)return; BGM.start(); flap(side); if(side==='L')tL=0; else tR=0; }
+function press(side){ if(!started||phase!=='playing'||countingOut||transPhase!=='none')return; BGM.start(); flap(side); if(side==='L')tL=0; else tR=0; }
 const stage=document.getElementById('stage');
 addEventListener('contextmenu',e=>e.preventDefault());
 stage.addEventListener('pointerdown',e=>{ const wl=[...pointers.values()].includes('L'), wr=[...pointers.values()].includes('R');
@@ -706,6 +746,13 @@ function pollGamepad(){
     gpPrevUp=up; gpPrevDown=down; gpPrevA=aBtn;
     return;
   }
+  // tutorial overlay sits on top of a hidden title screen — without this branch, A would fall
+  // through to the (invisible) mode-select handling below and silently start a game underneath it
+  if(phase==='tutorial'){
+    if(aBtn && !gpPrevA) tutAdvance();
+    gpPrevUp=up; gpPrevDown=down; gpPrevA=aBtn;
+    return;
+  }
   gpPrevUp=up; gpPrevDown=down;
   if(phase!=='playing'){ gpPrevA=aBtn; return; }
 
@@ -719,6 +766,7 @@ function pollGamepad(){
 addEventListener('keydown',e=>{ if(e.repeat)return;
   if(phase==='splash'){ if(e.key===' '||e.key==='Enter'){ e.preventDefault();
     document.getElementById('startBtn').click(); } return; }
+  if(phase==='tutorial'){ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); tutAdvance(); } return; }
   if(e.key==='ArrowLeft'||e.key==='a'){ if(!keyL){keyL=true;recompute();press('L');fadeHint();} }
   if(e.key==='ArrowRight'||e.key==='d'){ if(!keyR){keyR=true;recompute();press('R');fadeHint();} }
   if(e.key===' '){ if(!keyL)press('L'); if(!keyR)press('R'); keyL=keyR=true; recompute(); fadeHint(); e.preventDefault(); } });
@@ -878,7 +926,7 @@ function checkStageAdvance(){
   if(mode!=='stage' || pendingAdvance) return;
   // just flag the advance here — the actual stage change waits until every mini from this
   // delivery has finished flying home (see the pendingAdvance handling in tick())
-  if(stageNum<3 && banked-stageBase>=STAGE_TARGETS[stageNum-1]){ pendingAdvance=stageNum+1; advanceTimer=-1; }
+  if(stageNum<3 && banked-stageBase>=STAGE_TARGETS[stageNum-1]) pendingAdvance=stageNum+1;
 }
 function runStageAdvance(){
   // rebase here, not when the quota was hit: everything that landed in the meantime belongs to the
@@ -887,7 +935,7 @@ function runStageAdvance(){
   if(pendingAdvance===2){ stageNum=2; updateWorldHeight(); announceStage('ステージ2 とうじょう！', STAGE_TARGETS[1]+'体のミニを帰巣させよう'); }
   else if(pendingAdvance===3){ stageNum=3; announceStage('ボス とうじょう！','たくさん踏みつけて倒そう！'); spawnBoss(); }
   BGM.setStage(stageNum); // after spawnBoss, so stage 3 leaves the boss override in charge
-  pendingAdvance=null; advanceTimer=-1;
+  pendingAdvance=null;
 }
 
 // ---------- loop ----------
@@ -907,6 +955,27 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
       else { finishTimer-=dt; if(finishTimer<=0) finishGame(); }
     }
     document.getElementById('score').textContent=score;
+    updateModeStat();
+    draw(); requestAnimationFrame(tick); return;
+  }
+
+  // stage transition: the world is frozen for the whole cutscene, so only the banners keep
+  // animating. runStageAdvance() fires on the one frame the screen is fully black, which is what
+  // hides the lovot's reposition, the camera snap, the sky swap and the boss appearing.
+  if(transPhase!=='none'){
+    updateEffects(dt);
+    transTimer-=dt;
+    if(transPhase==='hold'){
+      if(transTimer<=0){ transPhase='out'; transTimer=TRANS_OUT; }
+    } else if(transPhase==='out'){
+      stageFade=Math.min(1,1-transTimer/TRANS_OUT);
+      // wipe the leftover banners at full black: the clear banner and the new stage's banner share
+      // a position, and on the 2->3 advance the camera doesn't move to carry the old one off screen
+      if(transTimer<=0){ stageFade=1; popups.length=0; runStageAdvance(); transPhase='in'; transTimer=TRANS_IN; }
+    } else {
+      stageFade=Math.max(0,transTimer/TRANS_IN);
+      if(transTimer<=0){ stageFade=0; transPhase='none'; }
+    }
     updateModeStat();
     draw(); requestAnimationFrame(tick); return;
   }
@@ -1085,11 +1154,12 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
 
   updateDeliveries(dt);
 
-  // stage advance: hangs back until the whole delivery has landed, then holds a quiet beat
-  // before the next stage actually reveals itself (camera snap, new enemies, boss, etc.)
-  if(pendingAdvance && delivering.length===0){
-    if(advanceTimer<0) advanceTimer=ADVANCE_PAUSE;
-    else { advanceTimer-=dt; if(advanceTimer<=0) runStageAdvance(); }
+  // stage advance: hangs back until the whole delivery has landed, then hands the screen over to
+  // the fade cutscene (see the transPhase branch at the top of tick) — the stage itself doesn't
+  // change until the fade is fully black
+  if(pendingAdvance && delivering.length===0 && transPhase==='none'){
+    transPhase='hold'; transTimer=TRANS_HOLD;
+    announceStage('ステージ'+stageNum+' クリア！', STAGE_TARGETS[stageNum-1]+'体 とどけた！');
   }
 
   // mode progress / end conditions
@@ -1266,6 +1336,11 @@ function draw(){
     ctx.strokeStyle='rgba(120,220,120,.8)'; ctx.beginPath(); ctx.arc(nest.x,nest.y,nest.r,0,7); ctx.stroke(); }
   ctx.restore(); // back to screen space for HUD-like overlays
   drawCountdown();
+  // stage-transition blackout, last so it covers everything including the countdown. Deliberately
+  // the dark plum of the panel chrome rather than pure black — it reads as the game dimming rather
+  // than the screen dying.
+  if(stageFade>0){ ctx.save(); ctx.globalAlpha=stageFade; ctx.fillStyle='#1a1420';
+    ctx.fillRect(0,0,W,H); ctx.restore(); }
 }
 // DEBUG-only outline of a vertical capsule (matches capsuleDist): bottom half-circle at (cx,cy),
 // straight sides up, top half-circle `up` pixels higher
@@ -1498,9 +1573,15 @@ let DEBUG=false; document.getElementById('dbg').addEventListener('change',e=>{ D
 // ---------- splash / mode select / result screens ----------
 document.getElementById('startBtn').addEventListener('click',()=>{
   document.getElementById('splash').classList.add('hidden');
-  document.getElementById('title').classList.remove('hidden');
-  phase='title'; titleSel=0; updateTitleSel();
   BGM.startTitle(); // no-op if it's already playing; covers a splash that never got a tap
+  // first-ever play walks through the tutorial before mode select; openTutorial() itself
+  // lands back on the title screen once it's done, so there's nothing else to do here
+  if(localStorage.getItem('lovot_seen_tutorial')){
+    document.getElementById('title').classList.remove('hidden');
+    phase='title'; titleSel=0; updateTitleSel();
+  } else {
+    openTutorial();
+  }
 });
 function startGame(m){
   mode=m;
@@ -1520,6 +1601,107 @@ const modeBtns=[...document.querySelectorAll('.modeBtn')];
 let titleSel=0;
 function updateTitleSel(){ modeBtns.forEach((b,i)=>b.classList.toggle('sel', i===titleSel)); }
 updateTitleSel();
+
+// ---------- tutorial (first-run walkthrough) ----------
+// each step is drawn as a small hand-authored SVG (matching the game's own palette) plus one
+// line of dialogue that letter-reveals like an old-school RPG message window — testers weren't
+// reading the dense .howto bullet list, so this forces one idea onto the screen at a time.
+const TUT_ART={
+  tap:`<svg viewBox="0 0 160 160" aria-hidden="true">
+    <circle cx="80" cy="68" r="34" fill="#ff6f8e"/>
+    <ellipse cx="63" cy="40" rx="9" ry="14" fill="#ff6f8e"/>
+    <ellipse cx="97" cy="40" rx="9" ry="14" fill="#ff6f8e"/>
+    <circle cx="68" cy="66" r="5" fill="#2b2730"/><circle cx="92" cy="66" r="5" fill="#2b2730"/>
+    <path d="M80 18 l-9 11 h18 z" fill="#ffd27a"/>
+    <circle cx="30" cy="130" r="12" fill="#fff6ea"/>
+    <circle cx="30" cy="130" r="20" fill="none" stroke="#ffd27a" stroke-width="3" opacity=".6"/>
+    <circle cx="30" cy="130" r="28" fill="none" stroke="#ffd27a" stroke-width="2" opacity=".3"/>
+    <circle cx="130" cy="130" r="12" fill="#fff6ea"/>
+    <circle cx="130" cy="130" r="20" fill="none" stroke="#ffd27a" stroke-width="3" opacity=".6"/>
+    <circle cx="130" cy="130" r="28" fill="none" stroke="#ffd27a" stroke-width="2" opacity=".3"/>
+    <text x="30" y="135" text-anchor="middle" font-size="14" font-weight="800" fill="#2b2730">L</text>
+    <text x="130" y="135" text-anchor="middle" font-size="14" font-weight="800" fill="#2b2730">R</text>
+  </svg>`,
+  rescue:`<svg viewBox="0 0 160 160" aria-hidden="true">
+    <circle cx="80" cy="46" r="26" fill="#ff6f8e"/>
+    <ellipse cx="66" cy="24" rx="7" ry="11" fill="#ff6f8e"/><ellipse cx="94" cy="24" rx="7" ry="11" fill="#ff6f8e"/>
+    <circle cx="72" cy="46" r="4" fill="#2b2730"/><circle cx="88" cy="46" r="4" fill="#2b2730"/>
+    <path d="M80 78 v24 M70 94 l10 12 l10 -12" fill="none" stroke="#ffd27a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="106" y1="128" x2="117" y2="109" stroke="rgba(255,255,255,.5)" stroke-width="1.5"/>
+    <circle cx="120" cy="103" r="10" fill="#ffd27a"/>
+    <circle cx="96" cy="132" r="15" fill="#7ecbe0"/>
+    <circle cx="91" cy="130" r="2.6" fill="#2b2730"/><circle cx="101" cy="130" r="2.6" fill="#2b2730"/>
+    <path d="M38 108 l3 8 l8 3 l-8 3 l-3 8 l-3 -8 l-8 -3 l8 -3 z" fill="#ffe27a"/>
+  </svg>`,
+  nest:`<svg viewBox="0 0 160 160" aria-hidden="true">
+    <line x1="46" y1="46" x2="56" y2="28" stroke="rgba(255,255,255,.5)" stroke-width="1.5"/>
+    <circle cx="58" cy="22" r="9" fill="#ffd27a"/>
+    <circle cx="40" cy="50" r="14" fill="#7ecbe0"/>
+    <circle cx="36" cy="48" r="2.4" fill="#2b2730"/><circle cx="45" cy="48" r="2.4" fill="#2b2730"/>
+    <path d="M56 58 Q95 70 118 100" fill="none" stroke="#ffd27a" stroke-width="4" stroke-linecap="round" stroke-dasharray="2 10"/>
+    <path d="M109 91 l11 11 l-15 3 z" fill="#ffd27a"/>
+    <path d="M90 128 Q120 100 150 128 Z" fill="#c8863c"/>
+    <path d="M92 128 Q120 138 148 128" fill="none" stroke="#a8672a" stroke-width="3"/>
+    <path d="M100 122 Q120 130 140 122" fill="none" stroke="#a8672a" stroke-width="2"/>
+    <path d="M120 96 c-4-6-14-3-14 4c0 6 14 14 14 14s14-8 14-14c0-7-10-10-14-4z" fill="#ff6f8e"/>
+  </svg>`,
+  spike:`<svg viewBox="0 0 160 160" aria-hidden="true">
+    <circle cx="80" cy="80" r="24" fill="#7ecbe0"/>
+    <circle cx="74" cy="78" r="4" fill="#2b2730"/><circle cx="86" cy="78" r="4" fill="#2b2730"/>
+    <polygon points="58,96 66,100 60,112" fill="#e14f70"/>
+    <polygon points="80,102 88,108 76,112" fill="#e14f70"/>
+    <polygon points="100,96 94,100 100,112" fill="#e14f70"/>
+    <path d="M120 30 l16 30 h-32 z" fill="#ffd27a" stroke="#2b2730" stroke-width="2" stroke-linejoin="round"/>
+    <text x="120" y="55" text-anchor="middle" font-size="16" font-weight="800" fill="#2b2730">!</text>
+  </svg>`,
+};
+const TUT_STEPS=[
+  {text:'左右をタップして\nパタパタ羽ばたこう', art:'tap'},
+  {text:'ちびLOVOTの風船を\n踏んでレスキューしよう', art:'rescue'},
+  {text:'地面の巣まで\n連れて行って！', art:'nest'},
+  {text:'ちびLOVOTのトゲには\n気をつけて！', art:'spike'},
+];
+let tutStep=0, tutTimer=null, tutTyping=false;
+const tutTextEl=document.getElementById('tutText'), tutArtEl=document.getElementById('tutArt'),
+  tutDotsEl=document.getElementById('tutDots'), tutNextBtn=document.getElementById('tutNext');
+function openTutorial(){
+  document.getElementById('title').classList.add('hidden');
+  document.getElementById('tutorial').classList.remove('hidden');
+  phase='tutorial'; tutStep=0; renderTutStep();
+}
+function closeTutorial(){
+  clearInterval(tutTimer); tutTyping=false;
+  document.getElementById('tutorial').classList.add('hidden');
+  localStorage.setItem('lovot_seen_tutorial','1');
+  document.getElementById('title').classList.remove('hidden');
+  phase='title'; titleSel=0; updateTitleSel();
+}
+function renderTutStep(){
+  const s=TUT_STEPS[tutStep];
+  tutArtEl.innerHTML=TUT_ART[s.art];
+  tutDotsEl.innerHTML=TUT_STEPS.map((_,i)=>`<span class="${i===tutStep?'on':''}"></span>`).join('');
+  tutNextBtn.textContent = tutStep===TUT_STEPS.length-1 ? 'はじめる！' : 'つぎへ';
+  typeTutText(s.text);
+}
+function typeTutText(full){
+  clearInterval(tutTimer);
+  tutTextEl.textContent=''; tutTyping=true;
+  let i=0;
+  tutTimer=setInterval(()=>{
+    i++; tutTextEl.textContent=full.slice(0,i);
+    if(i>=full.length){ clearInterval(tutTimer); tutTyping=false; }
+  },45);
+}
+function tutAdvance(){
+  if(tutTyping){ clearInterval(tutTimer); tutTextEl.textContent=TUT_STEPS[tutStep].text; tutTyping=false; return; }
+  if(tutStep<TUT_STEPS.length-1){ tutStep++; renderTutStep(); } else { closeTutorial(); }
+}
+document.getElementById('tutCard').addEventListener('click',e=>{
+  if(e.target.closest('#tutSkip')) return; // skip opts out of the tap-anywhere-to-advance area
+  tutAdvance();
+});
+document.getElementById('tutSkip').addEventListener('click',e=>{ e.stopPropagation(); closeTutorial(); });
+document.getElementById('howtoBtn').addEventListener('click',()=>openTutorial());
 
 function finishGame(){
   if(phase!=='playing') return;
