@@ -179,9 +179,9 @@
       <div class="head">あそびかた</div>
       ・左右をタップしてパタパタ羽ばたこう<br>
       ・ちびラボットを上から踏んで仲間にしよう<br>
-      ・巣まで連れて帰って納品！1体につき1点<br>
-      ・<b>3体まとめて納品で +10ボーナス</b>。6体で+20、9体で+40…<br>
-      ・✨金色のミニは、納品すると1体につき +100<br>
+      ・巣まで連れて帰って帰巣！1体につき1点<br>
+      ・<b>3体まとめて帰巣で +10ボーナス</b>。6体で+20、9体で+40…<br>
+      ・✨金色のミニは、帰巣すると1体につき +100<br>
       ・トゲの部分にぶつかるとダメージ<br>
       ・ゲームパッド接続時は十字キー左右で傾き、Aボタンで羽ばたき(モード選択では上下で選択、Aで決定)
       <div class="tease">💡 欲張るほど大きく稼げる。でもトゲに当たると仲間は散らばる…!</div>
@@ -206,7 +206,7 @@
     <h1 id="r_title">クリア！</h1>
     <div class="stats">
       <div class="stat"><span id="r_score">0</span><small>スコア</small></div>
-      <div class="stat"><span id="r_count">0</span><small>納品数</small></div>
+      <div class="stat"><span id="r_count">0</span><small>帰巣数</small></div>
       <div class="stat"><span id="r_time">0:00</span><small>タイム</small></div>
     </div>
     <div class="best" id="r_best"></div>
@@ -244,7 +244,7 @@
   <div class="modeStat" id="modeStat"></div>
   <div class="starBadge" id="starBadge"></div>
 </div>
-<div id="hint">左タップ＝左の手 / 右タップ＝右の手 / 両方で上昇<br>上から踏んで仲間に → 巣に連れ帰って納品 / 横からぶつかると散らばる</div>
+<div id="hint">左タップ＝左の手 / 右タップ＝右の手 / 両方で上昇<br>上から踏んで仲間に → 巣に連れ帰って帰巣 / 横からぶつかると散らばる</div>
 
 <div id="topbar">
   <button id="bgm">🔊</button>
@@ -324,7 +324,7 @@ let countingOut=false;
 // cutscene — hold on a "クリア！" beat, fade to black, do the whole discontinuous switch while
 // nothing is visible, then fade back up already on the new stage.
 let transPhase='none', transTimer=0, stageFade=0; // 'hold'->'out'->'in'; stageFade 0=clear, 1=black
-const TRANS_HOLD=1.2, TRANS_OUT=0.45, TRANS_IN=0.7;
+const TRANS_HOLD=1.5, TRANS_OUT=0.45, TRANS_IN=0.7;
 let invincible=0, nextStarAt=0; // invincibility star: seconds left / elapsed-time of the next spawn
 // from stage 2 onward the world grows to 2 screens tall and the camera scrolls up to follow —
 // a surprise reveal of new sky/enemies above what used to be a hard ceiling
@@ -817,7 +817,7 @@ function popupX(){ return Math.min(Math.max(L.x, GX+100), GX+GW-100); }
 // upper lane, single line — a golden pays a flat GOLDEN_BONUS when it's banked, and that's the
 // whole rule, so it fits on one line and never needs a second one
 function announceGolden(){
-  pushTagged('golden',{x:popupX(), y:Math.max(L.y-116, camY+46), text:'✨ 金色ゲット！ 納品で +'+GOLDEN_BONUS,
+  pushTagged('golden',{x:popupX(), y:Math.max(L.y-116, camY+46), text:'✨ 金色ゲット！ 帰巣で +'+GOLDEN_BONUS,
     color:'#ffd700', size:24, life:1.6, life0:1.6, vy:-34, bounce:true});
   SFX.sparkle();
 }
@@ -827,7 +827,7 @@ function announceTailTier(){
   const n=tail.length;
   if(n<BONUS_STEP || n%BONUS_STEP!==0) return;
   pushTagged('tier',{x:popupX(), y:Math.max(L.y-58, camY+64), text:n+'体ボーナス！',
-    text2:'いま納品で ボーナス +'+deliveryBonus(n,countGolden(tail)),
+    text2:'いま帰巣で ボーナス +'+deliveryBonus(n,countGolden(tail)),
     color:'#ffd27a', color2:'#fff3da', size:30, size2:17, life:1.8, life0:1.8, vy:-30, bounce:true});
   SFX.shine();
 }
@@ -1203,7 +1203,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   else{
     const head='抱えてる: '+carry+(cGold>0 ? '  ✨'+cGold+' (+'+(cGold*GOLDEN_BONUS)+')' : '');
     const step= carry%BONUS_STEP===0
-      ? 'いま納品で '+carry+'体ボーナス +'+tierBonus(carry)+'！'
+      ? 'いま帰巣で '+carry+'体ボーナス +'+tierBonus(carry)+'！'
       : 'あと'+(nextStep-carry)+'体で '+nextStep+'体ボーナス +'+tierBonus(nextStep)+'！';
     carryEl.textContent=head+'\n'+step;
   }
@@ -1218,7 +1218,7 @@ function updateModeStat(){
   if(mode==='stage'){
     if(stageNum<3){
       const target=STAGE_TARGETS[stageNum-1];
-      el.textContent='ステージ'+stageNum+'  納品 '+Math.min(banked-stageBase,target)+' / '+target+'体';
+      el.textContent='ステージ'+stageNum+'  帰巣 '+Math.min(banked-stageBase,target)+' / '+target+'体';
     } else {
       el.textContent=boss ? 'ボスHP '+Math.max(0,boss.hp)+' / '+boss.maxHp : 'ステージ3';
     }
@@ -1731,7 +1731,7 @@ function finishGame(){
 }
 function buildShareText(){
   const mm=Math.floor(elapsed/60), ss=Math.floor(elapsed%60), time=mm+':'+String(ss).padStart(2,'0');
-  if(mode==='stage') return `LOVOTの ふわふわレスキューで全3ステージ制覇！🎈\nスコア${score}点・納品${banked}体・タイム${time}`;
+  if(mode==='stage') return `LOVOTの ふわふわレスキューで全3ステージ制覇！🎈\nスコア${score}点・帰巣${banked}体・タイム${time}`;
   if(mode==='time') return `LOVOTの ふわふわレスキューの1分間チャレンジでスコア${score}点獲得！🎈`;
   return `LOVOTの ふわふわレスキューで遊んだよ！スコア${score}点🎈`;
 }
