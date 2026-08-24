@@ -308,6 +308,11 @@ const FANFARE_HOLD=3.5; // seconds the BGM stays out of the way for the boss-def
 // horizontal patrol speed (px/s) per boss pattern — see bossPattern(): 1 = opening drift,
 // 2 = quicker drift, 3 = stands still and throws, 4 = last hit point, a 3x panic dash
 const BOSS_PATROL_SPEED=[46, 104, 0, 312];
+// vertical float per pattern (px, rad/s). Pattern 1 keeps the original gentle bob so the opening
+// still reads as calm; from 2 on it gets loftier as the fight escalates. Pattern 3 stands still
+// (its patrol speed is 0), so the float is the whole of its movement and gets the most air.
+const BOSS_BOB_AMP =[22, 44, 56, 42];
+const BOSS_BOB_FREQ=[1.1, 1.3, 1.45, 1.75];
 const ENEMY_SPAWN_GRACE=1.5; // seconds a freshly (re)spawned mini is see-through and can't be touched
 const GOLDEN_RATE=0.04;      // chance any spawning mini is the rare golden one (worth GOLDEN_BONUS)
 const INVINCIBLE_DUR=8, STAR_MIN=15, STAR_MAX=25; // invincibility star: duration, and its spawn-interval range
@@ -822,29 +827,33 @@ const BONUS_STEP=3, BONUS_BASE=10, GOLDEN_BONUS=100;
 // run — and a straight always wins if a batch technically completes both.
 const FLUSH_STEP=3, FLUSH_BASE=20, STRAIGHT_BONUS=150;
 function countGolden(list){ let n=0; for(const t of list) if(t.golden) n++; return n; }
+// besides the name/bonus, this also reports which tail indices [start,end] make up the winning
+// run, so the carry renderer can light up exactly the minis actually in the hand — not the whole tail
 function bestHand(list){
   if(list.length<FLUSH_STEP) return null;
   // longest consecutive run of one color; a golden extends whatever run it lands in
-  let flushBest=0, runLen=0, runColor=null;
-  for(const t of list){
+  let flushBest=0, flushEnd=-1, runLen=0, runColor=null;
+  for(let i=0;i<list.length;i++){
+    const t=list[i];
     if(t.golden){ runLen++; }
     else if(runColor===null || t.color===runColor){ runLen++; runColor=t.color; }
     else { runLen=1; runColor=t.color; }
-    flushBest=Math.max(flushBest, runLen);
+    if(runLen>flushBest){ flushBest=runLen; flushEnd=i; }
   }
   // longest consecutive run with no repeated color (sliding window); a golden never repeats
-  let straightBest=0, left=0; const seen=new Set();
+  let straightBest=0, straightStart=-1, straightEnd=-1, left=0; const seen=new Set();
   for(let right=0; right<list.length; right++){
     const t=list[right];
     if(!t.golden){
       while(seen.has(t.color)){ const lt=list[left]; if(!lt.golden) seen.delete(lt.color); left++; }
       seen.add(t.color);
     }
-    straightBest=Math.max(straightBest, right-left+1);
+    const len=right-left+1;
+    if(len>straightBest){ straightBest=len; straightStart=left; straightEnd=right; }
   }
-  if(straightBest>=palette.length) return {name:'🌈ストレート', bonus:STRAIGHT_BONUS};
+  if(straightBest>=palette.length) return {name:'🌈ストレート', bonus:STRAIGHT_BONUS, start:straightStart, end:straightEnd};
   const tier=Math.floor(flushBest/FLUSH_STEP);
-  return tier>=1 ? {name:flushBest+'連続おそろい', bonus:FLUSH_BASE*Math.pow(2,tier-1)} : null;
+  return tier>=1 ? {name:flushBest+'連続おそろい', bonus:FLUSH_BASE*Math.pow(2,tier-1), start:flushEnd-flushBest+1, end:flushEnd} : null;
 }
 function tierBonus(n){ const t=Math.floor(n/BONUS_STEP); return t<1 ? 0 : BONUS_BASE*Math.pow(2,t-1); }
 function deliveryBonus(list){ const hand=bestHand(list); return tierBonus(list.length) + countGolden(list)*GOLDEN_BONUS + (hand?hand.bonus:0); }
@@ -1066,7 +1075,11 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
       const pat=bossPattern(), speed=BOSS_PATROL_SPEED[pat-1], moving=speed>0;
       if(moving){ boss.x+=boss.dir*speed*dt;
         if(boss.x<GX+80){boss.x=GX+80; boss.dir=1;} if(boss.x>GX+GW-80){boss.x=GX+GW-80; boss.dir=-1;} }
-      boss.y=boss.baseY+Math.sin(boss.t*1.1)*22;
+      // two sines at unrelated frequencies (0.53 is deliberately not a simple ratio) so they never
+      // line up the same way twice and the float drifts instead of ticking like a metronome. Both
+      // are zero at boss.t=0, which is what lets the descend hand over to the patrol seamlessly.
+      { const amp=BOSS_BOB_AMP[pat-1], fq=BOSS_BOB_FREQ[pat-1];
+        boss.y=boss.baseY+Math.sin(boss.t*fq)*amp+Math.sin(boss.t*fq*0.53)*(amp*0.28); }
       if(pat>=3){ // patterns 3 & 4 fire telegraphed volleys of 6, then rest
         if(boss.volleyLeft>0){
           boss.volleyTimer-=dt;
@@ -1094,6 +1107,9 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
       boss.stateT+=dt; const dur=0.7, t=Math.min(1,boss.stateT/dur), e=1-(1-t)*(1-t);
       boss.alpha=0.4+0.6*e; boss.x=GX+GW*0.5; boss.y=boss.fleeToY+(boss.baseY-boss.fleeToY)*e;
       if(t>=1){ boss.state='patrol'; boss.stateT=0; boss.alpha=1; boss.x=GX+GW*0.5; boss.y=boss.baseY;
+        // restart the float from zero so it picks up exactly where the descend left off — the later
+        // patterns swing wide enough that resuming mid-sine would snap the boss ~70px on one frame
+        boss.t=0;
         boss.dir=Math.random()<0.5?-1:1; boss.iframe=0.3; boss.throwCooldown=1.6; boss.telegraph=0;
         boss.volleyLeft=0; boss.volleyTimer=0; }
     }
@@ -1355,8 +1371,12 @@ function draw(){
   if(boss) drawBoss();
   for(const b of bossBullets) drawBossBullet(b);
   for(const s of powerStars) drawPowerStar(s);
-  // tail followers (far first)
-  for(let i=tail.length-1;i>=0;i--){ const p=tailPos(i); miniLovot(p.x,p.y,0.7,tail[i].color,'happy',tail[i].golden); }
+  // tail followers (far first) — light up whichever ones currently make up the best poker hand,
+  // so the bonus previewed in the HUD/tier popup has an obvious on-screen "these are the ones" tell
+  const tailHand=bestHand(tail);
+  for(let i=tail.length-1;i>=0;i--){ const p=tailPos(i);
+    const glow=!!tailHand && i>=tailHand.start && i<=tailHand.end;
+    miniLovot(p.x,p.y,0.7,tail[i].color,'happy',tail[i].golden,undefined,undefined,glow); }
   for(const d of delivering) miniLovot(d.x,d.y,0.7-d.prog*0.3,d.color,'happy',d.golden);
   drawLovot();
   for(const p of puffs){ ctx.fillStyle=`rgba(255,255,255,${Math.max(0,p.a)*0.7})`; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill();
@@ -1478,9 +1498,16 @@ function drawSpikes(sides,color){
     }
   }
 }
-function miniLovot(x,y,sc,color,mood,golden,spikeSides,look){
+function miniLovot(x,y,sc,color,mood,golden,spikeSides,look,handGlow){
   ctx.save(); ctx.translate(x,y); ctx.scale(sc,sc);
   const bob=Math.sin(L.bob+x*0.05)*2; ctx.translate(0,bob);
+  if(handGlow && !golden){ // a plain white pulse — kept visually distinct from the golden aura so
+    // "you're carrying a rare mini" and "this one's part of your current combo" don't get confused
+    const pulse=0.5+0.5*Math.sin(L.bob*4);
+    const wg=ctx.createRadialGradient(0,0,R*0.5,0,0,R*1.6);
+    wg.addColorStop(0,`rgba(255,255,255,${0.3+pulse*0.25})`); wg.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=wg; ctx.beginPath(); ctx.arc(0,0,R*1.6,0,7); ctx.fill();
+  }
   if(golden){
     const pulse=0.5+0.5*Math.sin(L.bob*3), breathe=1+0.06*Math.sin(L.bob*4);
     ctx.scale(breathe,breathe);
@@ -1504,6 +1531,7 @@ function miniLovot(x,y,sc,color,mood,golden,spikeSides,look){
   hoodedLovot(color, mood, false, undefined, look?look[0]:0, look?look[1]:(mood==='sad'?0.8:0));
   if(spikeSides && spikeSides.length) drawSpikes(spikeSides,color);
   if(golden) drawSparkleRing(7, 1);
+  else if(handGlow) drawSparkleRing(4, 0.7); // fewer, slower sparkles than gold's — a quieter shine
   ctx.restore();
 }
 // orbiting 4-point sparkle stars, shared by a golden mini's glow and the player's star-power aura —
