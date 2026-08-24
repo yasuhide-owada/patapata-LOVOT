@@ -22,18 +22,29 @@
   #stage { position:fixed; inset:0; }
   canvas { display:block; width:100%; height:100%; }
 
+  /* column so each readout shrink-wraps to its own chip instead of stretching the full width */
   #hud { position:fixed; top:calc(env(safe-area-inset-top) + 12px); left:14px; z-index:10;
-    color:#243; pointer-events:none; }
+    color:#243; pointer-events:none;
+    display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
   #hud .score { font-size:40px; font-weight:800; letter-spacing:.01em; line-height:1;
     color:var(--coral-dk); text-shadow:0 1px 0 rgba(255,255,255,.6); }
   #hud .score small { font-size:15px; font-weight:700; opacity:.75; }
-  #hud .carry { margin-top:6px; font-size:14px; font-weight:700; color:#c8863c; line-height:1.45;
-    white-space:pre-line; /* the carry readout is two lines: what you hold, and the next step */
-    text-shadow:0 1px 0 rgba(255,255,255,.6); }
-  #hud .modeStat { margin-top:4px; font-size:15px; font-weight:800; color:var(--coral-dk);
-    text-shadow:0 1px 0 rgba(255,255,255,.6); }
-  #hud .starBadge { margin-top:4px; font-size:15px; font-weight:800; color:#e0a53f;
-    text-shadow:0 1px 0 rgba(255,255,255,.6); }
+  /* The small readouts sit on translucent chips rather than being raw text. They used to be dark
+     ink with a 1px white shadow, which only works over the bright day sky — and the sky behind them
+     changes with the stage (day -> dusk -> twilight) and again with altitude, so no fixed dark color
+     stays readable across all of them. Light text on a constant chip does. The score is left bare:
+     at 40px it carries itself. */
+  #hud .carry, #hud .modeStat, #hud .starBadge {
+    background:var(--chip-bg); backdrop-filter:blur(3px); border-radius:12px; padding:5px 10px;
+    text-shadow:0 1px 2px rgba(0,0,0,.5); }
+  /* modeStat and starBadge are emptied rather than hidden when they don't apply (practice mode has
+     no progress line, the star badge only exists while invincible) — without this they'd leave a
+     bare chip with nothing in it */
+  #hud .carry:empty, #hud .modeStat:empty, #hud .starBadge:empty { display:none; }
+  #hud .carry { font-size:14.5px; font-weight:700; color:var(--gold); line-height:1.5;
+    white-space:pre-line; /* the carry readout is two lines: what you hold, and the next step */ }
+  #hud .modeStat { font-size:17px; font-weight:800; color:var(--cream); }
+  #hud .starBadge { font-size:15px; font-weight:800; color:var(--gold); }
 
   /* starts hidden: only shown once play actually begins (see setHint) */
   #hint { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:5;
@@ -182,6 +193,7 @@
       ・巣まで連れて帰って帰巣！1体につき1点<br>
       ・<b>3体まとめて帰巣で +10ボーナス</b>。6体で+20、9体で+40…<br>
       ・✨金色のミニは、帰巣すると1体につき +100<br>
+      ・同じ色を3体連続で拾うとおそろいボーナス+20、5色連続で拾い切ると🌈ストレート+150<br>
       ・トゲの部分にぶつかるとダメージ<br>
       ・ゲームパッド接続時は十字キー左右で傾き、Aボタンで羽ばたき(モード選択では上下で選択、Aで決定)
       <div class="tease">💡 欲張るほど大きく稼げる。でもトゲに当たると仲間は散らばる…!</div>
@@ -803,9 +815,39 @@ function tailPos(i){ const idx=Math.min((i+1)*SP, hist.length-1); return hist[id
 // whole point — the tail you're carrying is the bet. A golden mini adds a flat GOLDEN_BONUS on
 // top (it used to multiply the whole thing, which ran away far too fast at 9+ minis).
 const BONUS_STEP=3, BONUS_BASE=10, GOLDEN_BONUS=100;
+// poker-style color bonus — both hands only look at *consecutive* catches (array order = catch
+// order), since the tail is drawn as a literal chain trailing the player: a "flush" is FLUSH_STEP+
+// in a row sharing a color, a "straight" is a run that passes through every palette color without
+// repeating one. Golden minis are wild in both — they extend a flush run and never break a straight
+// run — and a straight always wins if a batch technically completes both.
+const FLUSH_STEP=3, FLUSH_BASE=20, STRAIGHT_BONUS=150;
 function countGolden(list){ let n=0; for(const t of list) if(t.golden) n++; return n; }
+function bestHand(list){
+  if(list.length<FLUSH_STEP) return null;
+  // longest consecutive run of one color; a golden extends whatever run it lands in
+  let flushBest=0, runLen=0, runColor=null;
+  for(const t of list){
+    if(t.golden){ runLen++; }
+    else if(runColor===null || t.color===runColor){ runLen++; runColor=t.color; }
+    else { runLen=1; runColor=t.color; }
+    flushBest=Math.max(flushBest, runLen);
+  }
+  // longest consecutive run with no repeated color (sliding window); a golden never repeats
+  let straightBest=0, left=0; const seen=new Set();
+  for(let right=0; right<list.length; right++){
+    const t=list[right];
+    if(!t.golden){
+      while(seen.has(t.color)){ const lt=list[left]; if(!lt.golden) seen.delete(lt.color); left++; }
+      seen.add(t.color);
+    }
+    straightBest=Math.max(straightBest, right-left+1);
+  }
+  if(straightBest>=palette.length) return {name:'🌈ストレート', bonus:STRAIGHT_BONUS};
+  const tier=Math.floor(flushBest/FLUSH_STEP);
+  return tier>=1 ? {name:flushBest+'連続おそろい', bonus:FLUSH_BASE*Math.pow(2,tier-1)} : null;
+}
 function tierBonus(n){ const t=Math.floor(n/BONUS_STEP); return t<1 ? 0 : BONUS_BASE*Math.pow(2,t-1); }
-function deliveryBonus(n, goldens){ return tierBonus(n) + (goldens||0)*GOLDEN_BONUS; }
+function deliveryBonus(list){ const hand=bestHand(list); return tierBonus(list.length) + countGolden(list)*GOLDEN_BONUS + (hand?hand.bonus:0); }
 // Both catch banners live in fixed lanes above the lovot and only one of each may be on screen:
 // grabbing a second golden while the first banner is still floating used to stack two identical
 // messages, and the golden/tier banners fired on the same catch used to land on top of each other.
@@ -826,8 +868,9 @@ function announceGolden(){
 function announceTailTier(){
   const n=tail.length;
   if(n<BONUS_STEP || n%BONUS_STEP!==0) return;
-  pushTagged('tier',{x:popupX(), y:Math.max(L.y-58, camY+64), text:n+'体ボーナス！',
-    text2:'いま帰巣で ボーナス +'+deliveryBonus(n,countGolden(tail)),
+  const hand=bestHand(tail);
+  pushTagged('tier',{x:popupX(), y:Math.max(L.y-58, camY+64), text:n+'体ボーナス！'+(hand?'　'+hand.name+'！':''),
+    text2:'いま帰巣で ボーナス +'+deliveryBonus(tail),
     color:'#ffd27a', color2:'#fff3da', size:30, size2:17, life:1.8, life0:1.8, vy:-30, bounce:true});
   SFX.shine();
 }
@@ -837,6 +880,7 @@ function finishBatch(b){
   const parts=[];
   if(tb>0) parts.push(tier+'体ボーナス +'+tb);
   if(b.goldens>0) parts.push('✨×'+b.goldens+' +'+(b.goldens*GOLDEN_BONUS));
+  if(b.hand) parts.push(b.hand.name+' +'+b.hand.bonus);
   const sub = parts.length ? parts.join('   ')
     : 'あと'+(BONUS_STEP-b.count)+'体 まとめて とどけると +'+BONUS_BASE+'！';
   popups.push({x:nest.x,y:nest.y-50,text:b.count+'体 とどけた！',text2:sub,
@@ -895,8 +939,10 @@ function spawnBoss(){
 }
 function defeatBoss(){
   const bx=boss.x, by=boss.y, n=BOSS_REWARD;
-  // the boss drops a full flock at once, scored as one delivery like any other batch
-  const batch={remaining:n, count:n, goldens:0, bonus:deliveryBonus(n,0)};
+  // the boss drops a full flock at once, scored as one delivery like any other batch. Its colors
+  // just cycle through the palette (not actually curated by the player), so it skips the color-hand
+  // bonus entirely rather than handing out a guaranteed rainbow every single kill.
+  const batch={remaining:n, count:n, goldens:0, bonus:tierBonus(n)};
   for(let i=0;i<n;i++){ const ang=(i/n)*Math.PI*2, sx=bx+Math.cos(ang)*14, sy=by+Math.sin(ang)*14;
     delivering.push({x:sx,y:sy,sx,sy,color:palette[i%palette.length],golden:false,pts:1,delay:i*0.08,t:0,prog:0,batch}); }
   for(let k=0;k<18;k++) addPuff(bx+(Math.random()-0.5)*70, by+(Math.random()-0.5)*70, palette[(Math.random()*palette.length)|0]);
@@ -1144,8 +1190,8 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   // flat point, then the batch bonus lands last (see deliveryBonus) — the pull is entirely in
   // "one more before I go home", not in who happens to be at the back of the line
   if(tail.length>0 && Math.hypot(L.x-nest.x, L.y-nest.y) < nest.r+R*0.6){
-    const n=tail.length, goldens=countGolden(tail);
-    const batch={remaining:n, count:n, goldens, bonus:deliveryBonus(n,goldens)};
+    const n=tail.length, goldens=countGolden(tail), hand=bestHand(tail);
+    const batch={remaining:n, count:n, goldens, hand, bonus:deliveryBonus(tail)};
     for(let i=0;i<n;i++){ const p=tailPos(i);
       delivering.push({x:p.x,y:p.y,sx:p.x,sy:p.y,color:tail[i].color,golden:!!tail[i].golden,
         pts:1,delay:i*0.1,t:0,prog:0,batch}); }
@@ -1196,14 +1242,14 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   // choice rather than an invisible loss
   // split over two lines: the golden take is its own flat number, so hanging it off the end of the
   // step line made one long string where neither figure stood out
-  const carry=tail.length, cGold=countGolden(tail);
+  const carry=tail.length, cGold=countGolden(tail), cHand=bestHand(tail);
   const nextStep=carry+(BONUS_STEP-carry%BONUS_STEP);
   const carryEl=document.getElementById('carry');
   if(carry===0) carryEl.textContent='抱えてる: 0';
   else{
-    const head='抱えてる: '+carry+(cGold>0 ? '  ✨'+cGold+' (+'+(cGold*GOLDEN_BONUS)+')' : '');
+    const head='抱えてる: '+carry+(cGold>0 ? '  ✨'+cGold+' (+'+(cGold*GOLDEN_BONUS)+')' : '')+(cHand ? '  '+cHand.name : '');
     const step= carry%BONUS_STEP===0
-      ? 'いま帰巣で '+carry+'体ボーナス +'+tierBonus(carry)+'！'
+      ? 'いま帰巣で '+carry+'体ボーナス +'+deliveryBonus(tail)+'！'
       : 'あと'+(nextStep-carry)+'体で '+nextStep+'体ボーナス +'+tierBonus(nextStep)+'！';
     carryEl.textContent=head+'\n'+step;
   }
@@ -1457,19 +1503,22 @@ function miniLovot(x,y,sc,color,mood,golden,spikeSides,look){
   ctx.fillStyle=bg; ctx.beginPath(); ctx.ellipse(R*0.28,-R*1.78,13,16,0,0,7); ctx.fill();
   hoodedLovot(color, mood, false, undefined, look?look[0]:0, look?look[1]:(mood==='sad'?0.8:0));
   if(spikeSides && spikeSides.length) drawSpikes(spikeSides,color);
-  if(golden){
-    const n=7;
-    for(let i=0;i<n;i++){
-      const a=L.bob*1.6+i*(Math.PI*2/n), rad=R*(1.1+0.35*((i*37)%5)/5), sx=Math.cos(a)*rad, sy=Math.sin(a)*rad*0.85;
-      const tw=0.5+0.5*Math.sin(L.bob*5+i*2), s=4+5*tw;
-      ctx.save(); ctx.translate(sx,sy); ctx.rotate(a); ctx.globalAlpha=0.55+0.45*tw; ctx.fillStyle=i%2?'#fff7d6':'#ffd76b';
-      ctx.beginPath();
-      ctx.moveTo(0,-s); ctx.lineTo(s*0.32,-s*0.32); ctx.lineTo(s,0); ctx.lineTo(s*0.32,s*0.32);
-      ctx.lineTo(0,s); ctx.lineTo(-s*0.32,s*0.32); ctx.lineTo(-s,0); ctx.lineTo(-s*0.32,-s*0.32);
-      ctx.closePath(); ctx.fill(); ctx.restore();
-    }
-  }
+  if(golden) drawSparkleRing(7, 1);
   ctx.restore();
+}
+// orbiting 4-point sparkle stars, shared by a golden mini's glow and the player's star-power aura —
+// `spin` lets a caller run it faster than the mini's own gentle drift (the player's aura wants to
+// read as more energetic since it's a temporary power, not a permanent "I'm special" cue)
+function drawSparkleRing(n, spin){
+  for(let i=0;i<n;i++){
+    const a=L.bob*1.6*spin+i*(Math.PI*2/n), rad=R*(1.1+0.35*((i*37)%5)/5), sx=Math.cos(a)*rad, sy=Math.sin(a)*rad*0.85;
+    const tw=0.5+0.5*Math.sin(L.bob*5+i*2), s=4+5*tw;
+    ctx.save(); ctx.translate(sx,sy); ctx.rotate(a); ctx.globalAlpha=0.55+0.45*tw; ctx.fillStyle=i%2?'#fff7d6':'#ffd76b';
+    ctx.beginPath();
+    ctx.moveTo(0,-s); ctx.lineTo(s*0.32,-s*0.32); ctx.lineTo(s,0); ctx.lineTo(s*0.32,s*0.32);
+    ctx.lineTo(0,s); ctx.lineTo(-s*0.32,s*0.32); ctx.lineTo(-s,0); ctx.lineTo(-s*0.32,-s*0.32);
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  }
 }
 function drawBoss(){
   // a big mini with a danger-signaling spike ring (only the top is safe) plus a flash-white
@@ -1531,6 +1580,11 @@ function drawLovot(){
     ctx.save(); const og=ctx.createRadialGradient(0,0,R*0.6,0,0,R*2.4);
     og.addColorStop(0,`rgba(255,225,130,${0.35+pulse*0.3})`); og.addColorStop(1,'rgba(255,225,130,0)');
     ctx.fillStyle=og; ctx.beginPath(); ctx.arc(0,0,R*2.4,0,7); ctx.fill(); ctx.restore();
+    // rotating dashed halo ring, same language as a golden mini's glow, so "I'm powered up" reads
+    // as an obvious relative of "this one's special" rather than a totally new visual vocabulary
+    ctx.save(); ctx.rotate(L.bob*1.1); ctx.setLineDash([6,7]);
+    ctx.strokeStyle=`rgba(255,215,90,${0.5+pulse*0.3})`; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.arc(0,0,R*1.7,0,7); ctx.stroke(); ctx.restore();
   }
   ctx.scale(1+L.squash*0.18, 1-L.squash*0.18); if(blink) ctx.globalAlpha=0.45;
   const sway=Math.sin(L.bob*0.9)*6 - L.vx*0.03;
@@ -1539,6 +1593,7 @@ function drawLovot(){
   const img=(L.wing>0? sprUP: sprDN);
   if(img.complete && img.naturalWidth) ctx.drawImage(img, -SDW/2+SOFFX, -SDH/2+SOFFY, SDW, SDH);
   drawPupils();
+  if(invincible>0) drawSparkleRing(10, 2.2);
   ctx.restore();
 }
 function drawPupils(){
