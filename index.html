@@ -295,7 +295,11 @@ addEventListener('resize',resize);
 const P={ float:1.4, grav:760, flap:230, side:150, interval:160, maxUp:330, hit:0.85 };
 
 const L={ x:0,y:0, vx:0,vy:0, tilt:0, bob:0, armL:-0.5, armR:0.5, flapPulseL:0, flapPulseR:0, squash:0,
-          balloons:2, iframe:0, pupX:0, pupY:0, wing:0 };
+          balloons:2, iframe:0, reviveT:0, pupX:0, pupY:0, wing:0 };
+// how long, after both balloons pop, the lovot spends helplessly falling while they re-inflate —
+// no flap input does anything until this hits 0, so losing both balloons is a real setback again
+// instead of an instant, unearned recovery (see respawnLovot/press/the hold-flap block in tick)
+const REVIVE_DUR=1.2;
 const SPR={upTimer:0};
 const nest={ x:0,y:0, r:40 };
 let score=0, banked=0;
@@ -311,8 +315,11 @@ const BOSS_PATROL_SPEED=[46, 104, 0, 312];
 // vertical float per pattern (px, rad/s). Pattern 1 keeps the original gentle bob so the opening
 // still reads as calm; from 2 on it gets loftier as the fight escalates. Pattern 3 stands still
 // (its patrol speed is 0), so the float is the whole of its movement and gets the most air.
-const BOSS_BOB_AMP =[22, 44, 56, 42];
-const BOSS_BOB_FREQ=[1.1, 1.3, 1.45, 1.75];
+// The frequencies drop as the amplitudes rise: peak vertical speed is amp*freq, so holding the old
+// rates at this travel would read as a hard bounce rather than a float. Slower and wider is what
+// makes it ふわふわ — pattern 3 now takes ~6.6s for a full up-and-down.
+const BOSS_BOB_AMP =[22, 132, 168, 126];
+const BOSS_BOB_FREQ=[1.1, 0.85, 0.95, 1.15];
 const ENEMY_SPAWN_GRACE=1.5; // seconds a freshly (re)spawned mini is see-through and can't be touched
 const GOLDEN_RATE=0.04;      // chance any spawning mini is the rare golden one (worth GOLDEN_BONUS)
 const INVINCIBLE_DUR=8, STAR_MIN=15, STAR_MAX=25; // invincibility star: duration, and its spawn-interval range
@@ -651,7 +658,7 @@ const StarAmbient=(()=>{
   return { set };
 })();
 
-function resetAll(){ L.x=GX+GW*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.iframe=0;
+function resetAll(){ L.x=GX+GW*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.iframe=0; L.reviveT=0;
   tail.length=0; loose.length=0; enemies.length=0; hist.length=0; score=0; banked=0;
   delivering.length=0; popups.length=0; elapsed=0; timeLeft=TIME_LIMIT;
   countdownSec=null; countdownPulse=0;
@@ -662,7 +669,7 @@ function resetAll(){ L.x=GX+GW*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.
   BGM.endOverride(); StarAmbient.set(false);
   updateWorldHeight();
   for(let i=0;i<5;i++) spawnEnemy(); }
-function respawnLovot(){ L.x=nest.x; L.y=nest.y-120; L.vx=0; L.vy=0; L.balloons=2; L.iframe=1.6; hist.length=0; }
+function respawnLovot(){ L.x=nest.x; L.y=nest.y-120; L.vx=0; L.vy=0; L.balloons=0; L.iframe=1.6; L.reviveT=REVIVE_DUR; hist.length=0; }
 
 function spawnEnemy(){
   if(mode==='stage' && stageNum===3) return; // no fodder minis during the boss fight
@@ -696,7 +703,7 @@ function flap(side){ const f=P.flap*(L.balloons>=2?1:0.82); L.wing=0.13; SPR.upT
 let started=false;
 // countingOut keeps phase at 'playing' so the delivery can finish, but the lovot is already out of
 // the player's hands — without this the flap cue still fired on a bird that can no longer move
-function press(side){ if(!started||phase!=='playing'||countingOut||transPhase!=='none')return; BGM.start(); flap(side); if(side==='L')tL=0; else tR=0; }
+function press(side){ if(!started||phase!=='playing'||countingOut||transPhase!=='none'||L.reviveT>0)return; BGM.start(); flap(side); if(side==='L')tL=0; else tR=0; }
 const stage=document.getElementById('stage');
 addEventListener('contextmenu',e=>e.preventDefault());
 stage.addEventListener('pointerdown',e=>{ const wl=[...pointers.values()].includes('L'), wr=[...pointers.values()].includes('R');
@@ -1038,8 +1045,12 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   // control hint: readable for a beat before any input can dismiss it, and gone by HINT_MAX
   if(!hinted){ hintT+=dt; if(hintT>=HINT_MAX) setHint(false); }
 
-  if(holdL){ tL+=dt*1000; if(tL>=P.interval){ flap('L'); tL-=P.interval; } }
-  if(holdR){ tR+=dt*1000; if(tR>=P.interval){ flap('R'); tR-=P.interval; } }
+  // held-flap auto-repeat calls flap() directly (not through press()), so it needs its own
+  // reviveT guard — otherwise a held pointer/key from before the pop keeps flapping right through it
+  if(L.reviveT<=0){
+    if(holdL){ tL+=dt*1000; if(tL>=P.interval){ flap('L'); tL-=P.interval; } }
+    if(holdR){ tR+=dt*1000; if(tR>=P.interval){ flap('R'); tR-=P.interval; } }
+  }
 
   // lovot physics
   L.vy+=P.grav*dt;
@@ -1051,6 +1062,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   const ceil=-SPRTOPY+6; if(L.y<ceil){L.y=ceil; if(L.vy<0)L.vy*=-0.25;}
   const gnd=worldH-58; if(L.y>gnd){L.y=gnd; if(L.vy>0){L.squash=Math.min(1,L.vy/900);L.vy*=-0.14;}}
   if(L.iframe>0) L.iframe-=dt;
+  if(L.reviveT>0){ L.reviveT=Math.max(0,L.reviveT-dt); if(L.reviveT<=0) L.balloons=2; }
 
   // camera: stays put on a single screen until the world grows (stage 2+), then smoothly
   // scrolls to follow the lovot up past the old ceiling — the reveal is the "surprise"
@@ -1616,8 +1628,16 @@ function drawLovot(){
   }
   ctx.scale(1+L.squash*0.18, 1-L.squash*0.18); if(blink) ctx.globalAlpha=0.45;
   const sway=Math.sin(L.bob*0.9)*6 - L.vx*0.03;
-  if(L.balloons>=1) balloon(-16+sway*0.4,-R-64,'#ff9db0','#ff7d97');
-  if(L.balloons>=2) balloon(16+sway,-R-76,'#ffd27a','#ffbf4d');
+  if(L.reviveT>0){
+    // both balloons pop back into existence and grow back together — a visible "getting ready to
+    // fly again" beat, rather than the old instant, unearned recovery
+    const inflate=1-L.reviveT/REVIVE_DUR;
+    balloon(-16+sway*0.4,-R-64,'#ff9db0','#ff7d97', inflate);
+    balloon(16+sway,-R-76,'#ffd27a','#ffbf4d', inflate);
+  } else {
+    if(L.balloons>=1) balloon(-16+sway*0.4,-R-64,'#ff9db0','#ff7d97');
+    if(L.balloons>=2) balloon(16+sway,-R-76,'#ffd27a','#ffbf4d');
+  }
   const img=(L.wing>0? sprUP: sprDN);
   if(img.complete && img.naturalWidth) ctx.drawImage(img, -SDW/2+SOFFX, -SDH/2+SOFFY, SDW, SDH);
   drawPupils();
@@ -1633,10 +1653,18 @@ function drawPupils(){
   }
 }
 function arm(dir){ ctx.fillStyle='#eee7db'; ctx.beginPath(); ctx.ellipse(dir*8,10,6.5,12,dir*0.5,0,7); ctx.fill(); }
-function balloon(bx,by,c1,c2){ ctx.strokeStyle='rgba(120,120,130,.5)'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(bx,by+21); ctx.quadraticCurveTo(bx*0.4,by+38,0,-14); ctx.stroke();
+// scale (0-1, default 1) shrinks the whole balloon — string included — toward its (0,-14) anchor
+// on the head, so a re-inflating balloon visibly grows outward from that point instead of just
+// popping in at full size
+function balloon(bx,by,c1,c2,scale){
+  ctx.save();
+  if(scale!==undefined){ const s=Math.max(0.001,scale); ctx.translate(0,-14); ctx.scale(s,s); ctx.translate(0,14); }
+  ctx.strokeStyle='rgba(120,120,130,.5)'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(bx,by+21); ctx.quadraticCurveTo(bx*0.4,by+38,0,-14); ctx.stroke();
   const bg=ctx.createRadialGradient(bx-6,by-8,3,bx,by,25); bg.addColorStop(0,c1); bg.addColorStop(1,c2); ctx.fillStyle=bg;
   ctx.beginPath(); ctx.ellipse(bx,by,20,24,0,0,7); ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.45)'; ctx.beginPath(); ctx.ellipse(bx-7,by-9,4,6.5,-0.4,0,7); ctx.fill(); }
+  ctx.fillStyle='rgba(255,255,255,.45)'; ctx.beginPath(); ctx.ellipse(bx-7,by-9,4,6.5,-0.4,0,7); ctx.fill();
+  ctx.restore();
+}
 
 // ---------- panel ----------
 const gear=document.getElementById('gear'), panel=document.getElementById('panel');
