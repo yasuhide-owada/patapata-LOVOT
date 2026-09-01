@@ -43,7 +43,9 @@
   #hud .carry:empty, #hud .modeStat:empty, #hud .starBadge:empty { display:none; }
   #hud .carry { font-size:14.5px; font-weight:700; color:var(--gold); line-height:1.5;
     white-space:pre-line; /* the carry readout is two lines: what you hold, and the next step */ }
-  #hud .modeStat { font-size:17px; font-weight:800; color:var(--cream); }
+  #hud .modeStat { font-size:17px; font-weight:800; color:var(--cream); line-height:1.35;
+    white-space:pre-line; /* stage progress is two lines, so its chip stays narrow instead of
+    running wide enough to collide with the centered #hint text above the play field */ }
   #hud .starBadge { font-size:15px; font-weight:800; color:var(--gold); }
 
   /* starts hidden: only shown once play actually begins (see setHint) */
@@ -662,7 +664,7 @@ const StarAmbient=(()=>{
 })();
 
 function resetAll(){ L.x=GX+GW*0.5; L.y=H*0.42; L.vx=0; L.vy=0; L.balloons=2; L.iframe=0; L.reviveT=0;
-  tail.length=0; loose.length=0; enemies.length=0; hist.length=0; score=0; banked=0;
+  tail.length=0; loose.length=0; enemies.length=0; hist.length=0; score=0; banked=0; lastHandName=null;
   delivering.length=0; popups.length=0; elapsed=0; timeLeft=TIME_LIMIT;
   countdownSec=null; countdownPulse=0;
   stageNum=1; stageBase=0; boss=null; bossPhase='none'; camY=0; bossBullets.length=0;
@@ -809,12 +811,12 @@ function addPuff(x,y,c){ puffs.push({x,y,r:6,c,a:1}); }
 function befriend(e){ tail.push({color:e.color,golden:e.golden}); L.vy=-280; L.squash=0.5; addPuff(e.x,e.y,e.color); SFX.befriend();
   const i=enemies.indexOf(e); if(i>=0) enemies.splice(i,1); spawnEnemy();
   if(e.golden) announceGolden();
-  announceTailTier(); }
+  announceHand(); announceTailTier(); }
 function scatterTail(){ // sonic-style: whole tail drops & scatters, recoverable
   for(let i=0;i<tail.length;i++){ const p=tailPos(i);
     loose.push({ x:p.x, y:p.y, vx:(Math.random()-0.5)*260, vy:-120-Math.random()*140,
       color:tail[i].color, golden:tail[i].golden, arm:0.45, life:6.5 }); }
-  tail.length=0; L.iframe=1.0; L.vy=-140; SFX.hit(); }
+  tail.length=0; lastHandName=null; L.iframe=1.0; L.vy=-140; SFX.hit(); }
 const MISS_LINES=['うわーん！','わわっ！','きゃー！','あちゃー…','とほほ…','ぷしゅ〜'];
 function loseBalloon(){ L.balloons--; L.iframe=1.2; L.vy=-160; L.vx*=-0.4; SFX.pop();
   if(L.balloons<=0){ addPuff(L.x,L.y,'#fff'); SFX.miss();
@@ -861,9 +863,16 @@ function bestHand(list){
     const len=right-left+1;
     if(len>straightBest){ straightBest=len; straightStart=left; straightEnd=right; }
   }
-  if(straightBest>=palette.length) return {name:'🌈ストレート', bonus:STRAIGHT_BONUS, start:straightStart, end:straightEnd};
+  if(straightBest>=palette.length) return {name:'🌈ストレート', short:'🌈ストレート', bonus:STRAIGHT_BONUS, start:straightStart, end:straightEnd};
   const tier=Math.floor(flushBest/FLUSH_STEP);
-  return tier>=1 ? {name:flushBest+'連続おそろい', bonus:FLUSH_BASE*Math.pow(2,tier-1), start:flushEnd-flushBest+1, end:flushEnd} : null;
+  if(tier<1) return null;
+  // Five in a row is the flush that the straight is already named after, so it stops being one more
+  // "N連続おそろい" and takes the poker name plus its own oversized banner (see announceHand).
+  // `short` is what goes into the joined delivery summary, where the full name would run off screen.
+  const flush=flushBest>=5;
+  return { name: flush ? 'フラッシュ（'+flushBest+'連続おそろい）' : flushBest+'連続おそろい',
+    short: flush ? 'フラッシュ' : flushBest+'連続おそろい', big:flush, run:flushBest,
+    bonus:FLUSH_BASE*Math.pow(2,tier-1), start:flushEnd-flushBest+1, end:flushEnd };
 }
 function tierBonus(n){ const t=Math.floor(n/BONUS_STEP); return t<1 ? 0 : BONUS_BASE*Math.pow(2,t-1); }
 function deliveryBonus(list){ const hand=bestHand(list); return tierBonus(list.length) + countGolden(list)*GOLDEN_BONUS + (hand?hand.bonus:0); }
@@ -888,9 +897,26 @@ function announceTailTier(){
   const n=tail.length;
   if(n<BONUS_STEP || n%BONUS_STEP!==0) return;
   const hand=bestHand(tail);
-  pushTagged('tier',{x:popupX(), y:Math.max(L.y-58, camY+64), text:n+'体ボーナス！'+(hand?'　'+hand.name+'！':''),
+  // a flush has its own banner (announceHand), so it isn't repeated on this line as well
+  pushTagged('tier',{x:popupX(), y:Math.max(L.y-58, camY+64), text:n+'体ボーナス！'+(hand&&!hand.big?'　'+hand.short+'！':''),
     text2:'いま帰巣で ボーナス +'+deliveryBonus(tail),
     color:'#ffd27a', color2:'#fff3da', size:30, size2:17, life:1.8, life0:1.8, vy:-30, bounce:true});
+  SFX.shine();
+}
+// Top lane, and much larger than the other two: a flush is the rare one worth stopping for. It needs
+// its own announcement because the tier banner above only fires on multiples of BONUS_STEP, and a run
+// of 5 usually isn't one — the biggest hand in the game could otherwise be reached with nothing on
+// screen but a HUD line. Split over two lines because 'フラッシュ（5連続おそろい）' set this big runs
+// wider than a phone screen on one line.
+let lastHandName=null; // so it fires once when the hand is reached, not again on every later pickup
+function announceHand(){
+  const hand=bestHand(tail), nm=hand?hand.name:null;
+  if(nm===lastHandName) return;
+  lastHandName=nm;
+  if(!hand || !hand.big) return;
+  pushTagged('hand',{x:popupX(), y:Math.max(L.y-150, camY+30),
+    text:'フラッシュ！', text2:'（'+hand.run+'連続おそろい）',
+    color:'#ffd700', color2:'#fff3da', size:44, size2:19, life:2, life0:2, vy:-30, bounce:true});
   SFX.shine();
 }
 function finishBatch(b){
@@ -899,7 +925,7 @@ function finishBatch(b){
   const parts=[];
   if(tb>0) parts.push(tier+'体ボーナス +'+tb);
   if(b.goldens>0) parts.push('✨×'+b.goldens+' +'+(b.goldens*GOLDEN_BONUS));
-  if(b.hand) parts.push(b.hand.name+' +'+b.hand.bonus);
+  if(b.hand) parts.push(b.hand.short+' +'+b.hand.bonus);
   const sub = parts.length ? parts.join('   ')
     : 'あと'+(BONUS_STEP-b.count)+'体 まとめて とどけると +'+BONUS_BASE+'！';
   popups.push({x:nest.x,y:nest.y-50,text:b.count+'体 とどけた！',text2:sub,
@@ -1213,7 +1239,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     if(o.x<GX+20)o.x=GX+20; if(o.x>GX+GW-20)o.x=GX+GW-20;
     if(o.arm<=0 && Math.hypot(L.x-o.x,hcy-o.y) < hitR+16){ tail.push({color:o.color,golden:o.golden}); loose.splice(i,1); addPuff(o.x,o.y,o.color); SFX.recollect();
       if(o.golden) announceGolden();
-      announceTailTier(); continue; }
+      announceHand(); announceTailTier(); continue; }
     if(o.life<=0){ loose.splice(i,1); }
   }
 
@@ -1226,7 +1252,7 @@ function tick(now){ let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
     for(let i=0;i<n;i++){ const p=tailPos(i);
       delivering.push({x:p.x,y:p.y,sx:p.x,sy:p.y,color:tail[i].color,golden:!!tail[i].golden,
         pts:1,delay:i*0.1,t:0,prog:0,batch}); }
-    tail.length=0; SFX.deliver();
+    tail.length=0; lastHandName=null; SFX.deliver();
   }
 
   updateDeliveries(dt);
@@ -1295,7 +1321,7 @@ function updateModeStat(){
   if(mode==='stage'){
     if(stageNum<3){
       const target=STAGE_TARGETS[stageNum-1];
-      el.textContent='ステージ'+stageNum+'  帰巣 '+Math.min(banked-stageBase,target)+' / '+target+'体';
+      el.textContent='ステージ'+stageNum+'\n帰巣 '+Math.min(banked-stageBase,target)+' / '+target+'体';
     } else {
       el.textContent=boss ? 'ボスHP '+Math.max(0,boss.hp)+' / '+boss.maxHp : 'ステージ3';
     }
