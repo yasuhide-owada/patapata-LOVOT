@@ -47,7 +47,7 @@
   #hud .starBadge { font-size:15px; font-weight:800; color:var(--gold); }
 
   /* starts hidden: only shown once play actually begins (see setHint) */
-  #hint { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:5;
+  #hint { position:fixed; left:50%; top:calc(env(safe-area-inset-top) + 90px); transform:translateX(-50%); z-index:5;
     color:var(--cream); opacity:0; font-size:12.5px; font-weight:600; text-align:center; line-height:1.7;
     background:var(--chip-bg); padding:9px 15px; border-radius:16px; backdrop-filter:blur(3px);
     transition:opacity .6s ease; pointer-events:none; max-width:92vw; }
@@ -98,10 +98,10 @@
      centering that lives there is thrown away for every frame the animation is running */
   /* sits in the clear grass below the "1人用 レスキューアクション" line baked into the art */
   #splash #startBtn { position:absolute; left:0; right:0; margin:0 auto; bottom:3%;
-    width:min(300px, 78%); height:58px; border:none; border-radius:999px;
-    font-size:19px; font-weight:800; letter-spacing:.08em; cursor:pointer; color:#fff;
+    width:min(220px, 58%); height:46px; border:none; border-radius:999px;
+    font-size:16px; font-weight:800; letter-spacing:.08em; cursor:pointer; color:#fff;
     background:linear-gradient(135deg, var(--coral), var(--coral-dk));
-    box-shadow:0 10px 26px rgba(225,79,112,.5), 0 0 0 3px rgba(255,255,255,.55);
+    box-shadow:0 8px 20px rgba(225,79,112,.5), 0 0 0 2px rgba(255,255,255,.55);
     animation:startPulse 1.6s ease-in-out infinite; }
   @keyframes startPulse {
     0%,100%{ transform:scale(1); }
@@ -143,12 +143,12 @@
 
   /* tutorial: first-run walkthrough, one beat per card. The whole card is tap-to-advance (first
      tap finishes the typewriter reveal, next tap moves on) so it reads like a DQ message window;
-     #tutSkip is the only child that opts out of that bubbled click. */
+     #tutSkip and #tutBack are the children that opt out of that bubbled click. */
   #tutorial .card { cursor:pointer; position:relative; padding-top:34px; }
   #tutorial .skip { position:absolute; top:14px; right:16px; background:none; border:none;
     font-size:12px; font-weight:700; color:var(--cream); opacity:.55; cursor:pointer; }
-  #tutorial .tutArt { height:140px; display:flex; align-items:center; justify-content:center; margin-bottom:10px; }
-  #tutorial .tutArt svg { width:140px; height:140px; }
+  #tutorial .tutArt { height:154px; display:flex; align-items:center; justify-content:center; margin-bottom:10px; }
+  #tutorial .tutArt svg { width:154px; height:154px; }
   #tutorial .tutText { min-height:82px; font-size:15.5px; line-height:1.85; text-align:left;
     white-space:pre-line; padding:0 2px; }
   #tutorial .tutDots { display:flex; justify-content:center; gap:6px; margin:14px 0 16px; }
@@ -157,7 +157,10 @@
   #tutorial #tutNext { width:100%; height:48px; border:none; border-radius:999px; font-size:15px; font-weight:800;
     letter-spacing:.02em; cursor:pointer; color:#fff; background:linear-gradient(135deg, var(--coral), var(--coral-dk));
     box-shadow:0 8px 22px rgba(225,79,112,.5); }
-  #tutorial .tutHint { font-size:11px; opacity:.5; margin-top:9px; }
+  /* hidden rather than removed on the first card, so the card doesn't change height between steps */
+  #tutorial .tutBack { display:block; margin:9px auto 0; background:none; border:none;
+    font-size:11.5px; font-weight:700; color:var(--cream); opacity:.5; cursor:pointer; }
+  #tutorial .tutBack:disabled { visibility:hidden; }
   #result .stats { display:flex; justify-content:space-around; margin:18px 0 14px; }
   #result .stat span { display:block; font-size:26px; font-weight:800; color:var(--gold); }
   #result .stat small { display:block; font-size:11px; opacity:.65; margin-top:2px; }
@@ -185,12 +188,12 @@
 <div id="title" class="hidden">
   <div class="card">
     <h1>モードをえらぶ</h1>
-    <div class="sub">ちびラボットを集めて巣に届けよう</div>
+    <div class="sub">ちびラボットを集めてネストに届けよう</div>
     <div class="howto">
       <div class="head">あそびかた</div>
       ・左右をタップしてパタパタ羽ばたこう<br>
       ・ちびラボットを上から踏んで仲間にしよう<br>
-      ・巣まで連れて帰って帰巣！1体につき1点<br>
+      ・ネストまで連れて帰って帰巣！1体につき1点<br>
       ・<b>3体まとめて帰巣で +10ボーナス</b>。6体で+20、9体で+40…<br>
       ・✨金色のミニは、帰巣すると1体につき +100<br>
       ・同じ色を3体連続で拾うとおそろいボーナス+20、5色連続で拾い切ると🌈ストレート+150<br>
@@ -246,7 +249,7 @@
     <div class="tutText" id="tutText"></div>
     <div class="tutDots" id="tutDots"></div>
     <button id="tutNext">つぎへ</button>
-    <div class="tutHint">タップで先へ</div>
+    <button class="tutBack" id="tutBack">← 1つもどる</button>
   </div>
 </div>
 
@@ -256,7 +259,7 @@
   <div class="modeStat" id="modeStat"></div>
   <div class="starBadge" id="starBadge"></div>
 </div>
-<div id="hint">左タップ＝左の手 / 右タップ＝右の手 / 両方で上昇<br>上から踏んで仲間に → 巣に連れ帰って帰巣 / 横からぶつかると散らばる</div>
+<div id="hint">画面の両端をタップして<br>仲間をネストに連れて帰って</div>
 
 <div id="topbar">
   <button id="bgm">🔊</button>
@@ -1718,25 +1721,41 @@ updateTitleSel();
 // line of dialogue that letter-reveals like an old-school RPG message window — testers weren't
 // reading the dense .howto bullet list, so this forces one idea onto the screen at a time.
 const TUT_ART={
+  // The L/R targets sit *inside* a drawn phone, split by a dashed centre line, because floating
+  // them in empty space never said what they were halves *of* — testers read them as two buttons
+  // rather than "anywhere on the left of the screen". The notch and home bar are what make the
+  // outline read as a phone at this size. The lovot is the real game sprite rather than a circle,
+  // so the picture matches what's actually on screen a moment later.
   tap:`<svg viewBox="0 0 160 160" aria-hidden="true">
-    <circle cx="80" cy="68" r="34" fill="#ff6f8e"/>
-    <ellipse cx="63" cy="40" rx="9" ry="14" fill="#ff6f8e"/>
-    <ellipse cx="97" cy="40" rx="9" ry="14" fill="#ff6f8e"/>
-    <circle cx="68" cy="66" r="5" fill="#2b2730"/><circle cx="92" cy="66" r="5" fill="#2b2730"/>
-    <path d="M80 18 l-9 11 h18 z" fill="#ffd27a"/>
-    <circle cx="30" cy="130" r="12" fill="#fff6ea"/>
-    <circle cx="30" cy="130" r="20" fill="none" stroke="#ffd27a" stroke-width="3" opacity=".6"/>
-    <circle cx="30" cy="130" r="28" fill="none" stroke="#ffd27a" stroke-width="2" opacity=".3"/>
-    <circle cx="130" cy="130" r="12" fill="#fff6ea"/>
-    <circle cx="130" cy="130" r="20" fill="none" stroke="#ffd27a" stroke-width="3" opacity=".6"/>
-    <circle cx="130" cy="130" r="28" fill="none" stroke="#ffd27a" stroke-width="2" opacity=".3"/>
-    <text x="30" y="135" text-anchor="middle" font-size="14" font-weight="800" fill="#2b2730">L</text>
-    <text x="130" y="135" text-anchor="middle" font-size="14" font-weight="800" fill="#2b2730">R</text>
+    <defs>
+      <clipPath id="tutScreen"><rect x="43" y="12" width="74" height="136" rx="9"/></clipPath>
+      <linearGradient id="tutSky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#6fbfe8"/><stop offset=".6" stop-color="#a9dcf1"/>
+        <stop offset="1" stop-color="#cfe8bd"/>
+      </linearGradient>
+    </defs>
+    <rect x="38" y="4" width="84" height="152" rx="14" fill="#2b2730" stroke="rgba(255,246,234,.4)" stroke-width="2"/>
+    <rect x="70" y="6.5" width="20" height="3" rx="1.5" fill="rgba(255,246,234,.35)"/>
+    <rect x="68" y="150" width="24" height="3" rx="1.5" fill="rgba(255,246,234,.45)"/>
+    <g clip-path="url(#tutScreen)">
+      <rect x="43" y="12" width="74" height="136" fill="url(#tutSky)"/>
+      <rect x="43" y="126" width="74" height="22" fill="#8fc96a"/>
+      <image href="assets/images/lovot-wing-up.png" x="60" y="26" width="40" height="52"/>
+      <line x1="80" y1="12" x2="80" y2="148" stroke="#2b2730" stroke-width="1.5" stroke-dasharray="4 5" opacity=".45"/>
+      <g fill="none" stroke="#ffd27a">
+        <circle cx="61" cy="116" r="14" stroke-width="2.5" opacity=".6"/>
+        <circle cx="61" cy="116" r="19" stroke-width="1.8" opacity=".3"/>
+        <circle cx="99" cy="116" r="14" stroke-width="2.5" opacity=".6"/>
+        <circle cx="99" cy="116" r="19" stroke-width="1.8" opacity=".3"/>
+      </g>
+      <circle cx="61" cy="116" r="9.5" fill="#fff6ea"/>
+      <circle cx="99" cy="116" r="9.5" fill="#fff6ea"/>
+      <text x="61" y="120.5" text-anchor="middle" font-size="13" font-weight="800" fill="#2b2730">L</text>
+      <text x="99" y="120.5" text-anchor="middle" font-size="13" font-weight="800" fill="#2b2730">R</text>
+    </g>
   </svg>`,
   rescue:`<svg viewBox="0 0 160 160" aria-hidden="true">
-    <circle cx="80" cy="46" r="26" fill="#ff6f8e"/>
-    <ellipse cx="66" cy="24" rx="7" ry="11" fill="#ff6f8e"/><ellipse cx="94" cy="24" rx="7" ry="11" fill="#ff6f8e"/>
-    <circle cx="72" cy="46" r="4" fill="#2b2730"/><circle cx="88" cy="46" r="4" fill="#2b2730"/>
+    <image href="assets/images/lovot-wing-down.png" x="58" y="10" width="44" height="57"/>
     <path d="M80 78 v24 M70 94 l10 12 l10 -12" fill="none" stroke="#ffd27a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
     <line x1="106" y1="128" x2="117" y2="109" stroke="rgba(255,255,255,.5)" stroke-width="1.5"/>
     <circle cx="120" cy="103" r="10" fill="#ffd27a"/>
@@ -1749,32 +1768,30 @@ const TUT_ART={
     <circle cx="58" cy="22" r="9" fill="#ffd27a"/>
     <circle cx="40" cy="50" r="14" fill="#7ecbe0"/>
     <circle cx="36" cy="48" r="2.4" fill="#2b2730"/><circle cx="45" cy="48" r="2.4" fill="#2b2730"/>
-    <path d="M56 58 Q95 70 118 100" fill="none" stroke="#ffd27a" stroke-width="4" stroke-linecap="round" stroke-dasharray="2 10"/>
-    <path d="M109 91 l11 11 l-15 3 z" fill="#ffd27a"/>
-    <path d="M90 128 Q120 100 150 128 Z" fill="#c8863c"/>
-    <path d="M92 128 Q120 138 148 128" fill="none" stroke="#a8672a" stroke-width="3"/>
-    <path d="M100 122 Q120 130 140 122" fill="none" stroke="#a8672a" stroke-width="2"/>
-    <path d="M120 96 c-4-6-14-3-14 4c0 6 14 14 14 14s14-8 14-14c0-7-10-10-14-4z" fill="#ff6f8e"/>
+    <path d="M56 58 Q80 78 96 100" fill="none" stroke="#ffd27a" stroke-width="4" stroke-linecap="round" stroke-dasharray="2 10"/>
+    <path d="M85 89 l11 11 l-15 3 z" fill="#ffd27a"/>
+    <image href="assets/images/NEST.png" x="86" y="102" width="64" height="43"/>
+    <path d="M118 80 c-4-6-14-3-14 4c0 6 14 14 14 14s14-8 14-14c0-7-10-10-14-4z" fill="#ff6f8e"/>
   </svg>`,
   spike:`<svg viewBox="0 0 160 160" aria-hidden="true">
-    <circle cx="80" cy="80" r="24" fill="#7ecbe0"/>
-    <circle cx="74" cy="78" r="4" fill="#2b2730"/><circle cx="86" cy="78" r="4" fill="#2b2730"/>
-    <polygon points="58,96 66,100 60,112" fill="#e14f70"/>
-    <polygon points="80,102 88,108 76,112" fill="#e14f70"/>
-    <polygon points="100,96 94,100 100,112" fill="#e14f70"/>
-    <path d="M120 30 l16 30 h-32 z" fill="#ffd27a" stroke="#2b2730" stroke-width="2" stroke-linejoin="round"/>
-    <text x="120" y="55" text-anchor="middle" font-size="16" font-weight="800" fill="#2b2730">!</text>
+    <image href="assets/images/mini_lovot_purple_cutout.png" x="23" y="38" width="45" height="78"/>
+    <circle cx="45" cy="107" r="6.5" fill="none" stroke="#ff3b30" stroke-width="3"/>
+    <image href="assets/images/mini_lovot_balloon_cutout.png" x="79" y="38" width="59" height="78"/>
+    <circle cx="86" cy="87" r="6" fill="none" stroke="#ff3b30" stroke-width="3"/>
+    <circle cx="131" cy="87" r="6" fill="none" stroke="#ff3b30" stroke-width="3"/>
+    <circle cx="107" cy="107" r="8.5" fill="none" stroke="#ff3b30" stroke-width="3"/>
   </svg>`,
 };
 const TUT_STEPS=[
-  {text:'左右をタップして\nパタパタ羽ばたこう', art:'tap'},
+  {text:'画面の左右をタップして\nパタパタ羽ばたこう', art:'tap'},
   {text:'ちびLOVOTの風船を\n踏んでレスキューしよう', art:'rescue'},
-  {text:'地面の巣まで\n連れて行って！', art:'nest'},
+  {text:'地面のネストまで\n連れて行って！', art:'nest'},
   {text:'ちびLOVOTのトゲには\n気をつけて！', art:'spike'},
 ];
 let tutStep=0, tutTimer=null, tutTyping=false;
 const tutTextEl=document.getElementById('tutText'), tutArtEl=document.getElementById('tutArt'),
-  tutDotsEl=document.getElementById('tutDots'), tutNextBtn=document.getElementById('tutNext');
+  tutDotsEl=document.getElementById('tutDots'), tutNextBtn=document.getElementById('tutNext'),
+  tutBackBtn=document.getElementById('tutBack');
 function openTutorial(){
   document.getElementById('title').classList.add('hidden');
   document.getElementById('tutorial').classList.remove('hidden');
@@ -1792,6 +1809,7 @@ function renderTutStep(){
   tutArtEl.innerHTML=TUT_ART[s.art];
   tutDotsEl.innerHTML=TUT_STEPS.map((_,i)=>`<span class="${i===tutStep?'on':''}"></span>`).join('');
   tutNextBtn.textContent = tutStep===TUT_STEPS.length-1 ? 'はじめる！' : 'つぎへ';
+  tutBackBtn.disabled = tutStep===0; // nothing to go back to on the first card
   typeTutText(s.text);
 }
 function typeTutText(full){
@@ -1807,11 +1825,18 @@ function tutAdvance(){
   if(tutTyping){ clearInterval(tutTimer); tutTextEl.textContent=TUT_STEPS[tutStep].text; tutTyping=false; return; }
   if(tutStep<TUT_STEPS.length-1){ tutStep++; renderTutStep(); } else { closeTutorial(); }
 }
+function tutBack(){
+  if(tutStep===0) return;
+  tutStep--; renderTutStep(); // renderTutStep restarts the typewriter, which clears tutTimer
+}
 document.getElementById('tutCard').addEventListener('click',e=>{
-  if(e.target.closest('#tutSkip')) return; // skip opts out of the tap-anywhere-to-advance area
+  // skip and back opt out of the tap-anywhere-to-advance area — without this, tapping back would
+  // bubble up and immediately advance again, landing you right back where you started
+  if(e.target.closest('#tutSkip') || e.target.closest('#tutBack')) return;
   tutAdvance();
 });
 document.getElementById('tutSkip').addEventListener('click',e=>{ e.stopPropagation(); closeTutorial(); });
+document.getElementById('tutBack').addEventListener('click',e=>{ e.stopPropagation(); tutBack(); });
 document.getElementById('howtoBtn').addEventListener('click',()=>openTutorial());
 
 function finishGame(){
