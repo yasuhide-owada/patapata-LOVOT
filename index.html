@@ -232,7 +232,7 @@
       <div class="stat"><span id="r_time">0:00</span><small>タイム</small></div>
     </div>
     <div class="best" id="r_best"></div>
-    <button id="r_share">📤 スコアをシェア</button>
+    <button id="r_share">📤 結果をシェア</button>
     <button id="r_retry">もう一度</button>
     <button id="r_toTitle">モード選択へ戻る</button>
   </div>
@@ -1914,17 +1914,53 @@ function finishGame(){
   bestEl.textContent=bestText;
   document.getElementById('result').classList.remove('hidden');
 }
+// Named the same as the mode-select buttons, so what gets shared matches what was picked.
+const MODE_LABEL={practice:'練習', stage:'ステージクリア', time:'1分間チャレンジ'};
+// One labelled figure per line rather than a packed sentence: this gets pasted into a chat or a
+// note and read at a glance, so mode and score lead and the rest follows in the same shape every
+// time. No URL — the game is opened from a local address while testing, and a link to that is
+// meaningless to whoever receives it.
 function buildShareText(){
   const mm=Math.floor(elapsed/60), ss=Math.floor(elapsed%60), time=mm+':'+String(ss).padStart(2,'0');
-  if(mode==='stage') return `LOVOTの ふわふわレスキューで全3ステージ制覇！🎈\nスコア${score}点・帰巣${banked}体・タイム${time}`;
-  if(mode==='time') return `LOVOTの ふわふわレスキューの1分間チャレンジでスコア${score}点獲得！🎈`;
-  return `LOVOTの ふわふわレスキューで遊んだよ！スコア${score}点🎈`;
+  const lines=['🎈 LOVOTの ふわふわレスキュー',
+    'モード: '+(MODE_LABEL[mode]||mode),
+    'スコア: '+score+'点',
+    '帰巣: '+banked+'体'];
+  if(mode==='stage') lines.push('クリアタイム: '+time);
+  else if(mode==='practice') lines.push('プレイ時間: '+time);
+  return lines.join('\n');
 }
-document.getElementById('r_share').addEventListener('click',()=>{
+// Legacy copy path. Both navigator.share and navigator.clipboard require a secure context, so over
+// plain http on a LAN address — which is how this gets opened on a phone for testing — neither one
+// exists. execCommand still works there. iOS also needs the explicit setSelectionRange.
+function copyFallback(text){
+  const ta=document.createElement('textarea');
+  ta.value=text; ta.setAttribute('readonly','');
+  ta.style.cssText='position:fixed;top:0;left:0;opacity:0;';
+  document.body.appendChild(ta);
+  ta.select(); ta.setSelectionRange(0,text.length);
+  let ok=false;
+  try{ ok=document.execCommand('copy'); }catch(e){}
+  document.body.removeChild(ta);
+  return ok;
+}
+const SHARE_LABEL='📤 結果をシェア', shareBtn=document.getElementById('r_share');
+let shareFlashTimer=null;
+function flashShareLabel(msg){
+  clearTimeout(shareFlashTimer); // a second tap mid-flash must not capture the flashed text
+  shareBtn.textContent=msg;
+  shareFlashTimer=setTimeout(()=>{ shareBtn.textContent=SHARE_LABEL; },1600);
+}
+shareBtn.addEventListener('click',async()=>{
   const text=buildShareText();
-  if(navigator.share){ navigator.share({title:'LOVOTの ふわふわレスキュー',text,url:location.href}).catch(()=>{}); return; }
-  const url='https://twitter.com/intent/tweet?text='+encodeURIComponent(text)+'&url='+encodeURIComponent(location.href);
-  window.open(url,'_blank','noopener');
+  if(navigator.share){
+    try{ await navigator.share({title:'LOVOTの ふわふわレスキュー', text}); return; }
+    catch(e){ if(e && e.name==='AbortError') return; } // sheet dismissed — not a failure to report
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    try{ await navigator.clipboard.writeText(text); flashShareLabel('✅ コピーしました'); return; }catch(e){}
+  }
+  flashShareLabel(copyFallback(text) ? '✅ コピーしました' : '⚠️ コピーできませんでした');
 });
 document.getElementById('r_retry').addEventListener('click',()=>startGame(mode));
 document.getElementById('r_toTitle').addEventListener('click',()=>{
