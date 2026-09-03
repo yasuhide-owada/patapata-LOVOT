@@ -150,7 +150,9 @@
   #tutorial .skip { position:absolute; top:14px; right:16px; background:none; border:none;
     font-size:12px; font-weight:700; color:var(--cream); opacity:.55; cursor:pointer; }
   #tutorial .tutArt { height:154px; display:flex; align-items:center; justify-content:center; margin-bottom:10px; }
-  #tutorial .tutArt svg { width:154px; height:154px; }
+  /* height-locked, width from the viewBox: a landscape illustration then fills the card's width
+     instead of being letterboxed inside a square. Square viewBoxes still render 154x154. */
+  #tutorial .tutArt svg { height:154px; width:auto; max-width:100%; }
   #tutorial .tutText { min-height:82px; font-size:15.5px; line-height:1.85; text-align:left;
     white-space:pre-line; padding:0 2px; }
   #tutorial .tutDots { display:flex; justify-content:center; gap:6px; margin:14px 0 16px; }
@@ -193,7 +195,10 @@
     <div class="sub">ちびラボットを集めてネストに届けよう</div>
     <div class="howto">
       <div class="head">あそびかた</div>
-      ・左右をタップしてパタパタ羽ばたこう<br>
+      ・画面の両端をタップしてパタパタ羽ばたこう
+    </div>
+    <div class="howto">
+      <div class="head">攻略のヒント</div>
       ・ちびラボットを上から踏んで仲間にしよう<br>
       ・ネストまで連れて帰って帰巣！1体につき1点<br>
       ・<b>3体まとめて帰巣で +10ボーナス</b>。6体で+20、9体で+40…<br>
@@ -926,9 +931,12 @@ function finishBatch(b){
   if(tb>0) parts.push(tier+'体ボーナス +'+tb);
   if(b.goldens>0) parts.push('✨×'+b.goldens+' +'+(b.goldens*GOLDEN_BONUS));
   if(b.hand) parts.push(b.hand.short+' +'+b.hand.bonus);
-  const sub = parts.length ? parts.join('   ')
+  // one bonus per line: joined onto a single line these ran off both edges of the screen
+  const sub = parts.length ? parts.join('\n')
     : 'あと'+(BONUS_STEP-b.count)+'体 まとめて とどけると +'+BONUS_BASE+'！';
-  popups.push({x:nest.x,y:nest.y-50,text:b.count+'体 とどけた！',text2:sub,
+  // the sub-lines stack downward, so lift the whole popup to keep them clear of the nest
+  const extraLines=Math.max(0,(parts.length||1)-1);
+  popups.push({x:nest.x,y:nest.y-50-extraLines*24,text:b.count+'体 とどけた！',text2:sub,
     color:'#ffd27a',color2:b.bonus>0?'#fff3da':'#ffd9a0',size:32,size2:19,life:2.4,life0:2.4,vy:-28,bounce:true});
   for(let k=0;k<12;k++) addPuff(nest.x+(Math.random()-0.5)*46, nest.y-10+(Math.random()-0.5)*22, palette[(Math.random()*palette.length)|0]);
   SFX.deliver(); // the golden cue already fired as each one landed, so no sparkle here
@@ -1370,6 +1378,18 @@ const STAGE_SKY=[
     sunNear:'rgba(225,210,255,.85)', sunFar:'rgba(225,210,255,0)' },              // stage 3: twilight boss
 ];
 const HIGH_SKY={ top:'#e9d9ff', mid:'#ffe3c2', bottom:'#ffd0dd' }; // the "above the clouds" reveal, same at any stage
+// Popups are centred on a world position at a fixed size, so a long line (a delivery carrying
+// several bonuses, a hand name) could run off both edges — and `bounce` briefly scales everything
+// up ~1.4x on top of that. Shrink the type until the widest line fits instead of letting it spill.
+// Sets ctx.font as a side effect so the caller can draw straight afterwards.
+function fitFont(weight,size,lines,maxW){
+  let s=size, w=0;
+  ctx.font=`${weight} ${s}px ui-rounded, "Hiragino Maru Gothic ProN", sans-serif`;
+  for(const ln of lines){ const lw=ctx.measureText(ln).width; if(lw>w) w=lw; }
+  if(w>maxW && w>0){ s=Math.max(9,s*maxW/w);
+    ctx.font=`${weight} ${s}px ui-rounded, "Hiragino Maru Gothic ProN", sans-serif`; }
+  return s;
+}
 function draw(){
   // altitude fraction (0 at the ground, 1 near the top of a tall stage-2+ world) drives a
   // dreamier upper-sky palette and twinkling stars — the "surprise" for climbing up
@@ -1425,13 +1445,16 @@ function draw(){
   for(const p of popups){ const inProg=Math.min(1,(p.life0-p.life)/0.12);
     const scale=p.bounce ? 0.4+0.9*easeOutBack(inProg) : 0.6+0.5*inProg;
     ctx.save(); ctx.globalAlpha=Math.min(1,p.life/p.life0*3); ctx.translate(p.x,p.y); ctx.scale(scale,scale);
-    ctx.font=`900 ${p.size}px ui-rounded, "Hiragino Maru Gothic ProN", sans-serif`;
     ctx.textAlign='center'; ctx.textBaseline='middle';
+    const maxW=(W-16)/scale; // ctx is already scaled, so the width budget is in pre-scale units
+    const ms=fitFont(900,p.size,[p.text],maxW);
     ctx.lineWidth=4; ctx.strokeStyle='rgba(40,20,10,.55)'; ctx.strokeText(p.text,0,0);
     ctx.fillStyle=p.color; ctx.fillText(p.text,0,0);
-    if(p.text2){ const dy=p.size*0.95; ctx.font=`800 ${p.size2||Math.round(p.size*0.55)}px ui-rounded, "Hiragino Maru Gothic ProN", sans-serif`;
-      ctx.lineWidth=3; ctx.strokeText(p.text2,0,dy);
-      ctx.fillStyle=p.color2||p.color; ctx.fillText(p.text2,0,dy); }
+    if(p.text2){ const lines=String(p.text2).split('\n');
+      const s2=fitFont(800,p.size2||Math.round(p.size*0.55),lines,maxW);
+      ctx.lineWidth=3;
+      for(let li=0;li<lines.length;li++){ const dy=ms*0.95+li*s2*1.25;
+        ctx.strokeText(lines[li],0,dy); ctx.fillStyle=p.color2||p.color; ctx.fillText(lines[li],0,dy); } }
     ctx.restore(); }
   if(DEBUG){ ctx.lineWidth=2;
     ctx.strokeStyle='rgba(0,200,255,.95)'; ctx.beginPath(); ctx.arc(L.x,L.y+HITCY,R*P.hit,0,7); ctx.stroke();
@@ -1799,7 +1822,7 @@ const TUT_ART={
     <image href="assets/images/NEST.png" x="86" y="102" width="64" height="43"/>
     <path d="M118 80 c-4-6-14-3-14 4c0 6 14 14 14 14s14-8 14-14c0-7-10-10-14-4z" fill="#ff6f8e"/>
   </svg>`,
-  spike:`<svg viewBox="0 0 160 160" aria-hidden="true">
+  spike:`<svg viewBox="19 33 123 88" aria-hidden="true">
     <image href="assets/images/mini_lovot_purple_cutout.png" x="23" y="38" width="45" height="78"/>
     <circle cx="45" cy="107" r="6.5" fill="none" stroke="#ff3b30" stroke-width="3"/>
     <image href="assets/images/mini_lovot_balloon_cutout.png" x="79" y="38" width="59" height="78"/>
